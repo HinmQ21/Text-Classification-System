@@ -28,7 +28,7 @@ class TextClassifierService:
             # Initialize spam detection model (using a general classification model)
             self.models["spam"] = pipeline(
                 "text-classification",
-                model="unitary/toxic-bert",
+                model="mariagrandury/roberta-base-finetuned-sms-spam-detection",
                 return_all_scores=True
             )
             
@@ -129,7 +129,7 @@ class TextClassifierService:
             results = model(text)
             best_result = max(results[0], key=lambda x: x['score'])
             # Map toxic-bert labels to spam/not_spam
-            label = "spam" if best_result['label'] == "TOXIC" else "not_spam"
+            label = "spam" if best_result['label'] == "LABEL_1" else "not_spam"
             return {
                 "label": label,
                 "confidence": best_result['score']
@@ -137,7 +137,10 @@ class TextClassifierService:
             
         elif model_type == "topic":
             # Define candidate topics for zero-shot classification
-            candidate_labels = ["technology", "sports", "politics", "entertainment", "business", "health"]
+            candidate_labels = [
+                "technology", "sports", "politics", "entertainment", 
+                "business", "health", "education", "travel", "food", "science"
+            ]
             result = model(text, candidate_labels)
             return {
                 "label": result['labels'][0],
@@ -172,16 +175,32 @@ class TextClassifierService:
                 return {"label": "not_spam", "confidence": 0.8}
                 
         elif model_type == "topic":
-            tech_words = ["computer", "software", "technology", "ai", "programming"]
-            sports_words = ["football", "basketball", "soccer", "game", "team"]
+            # Enhanced topic classification with more categories
+            topic_keywords = {
+                "technology": ["computer", "software", "technology", "ai", "programming", "digital", "internet", "app", "code", "algorithm", "data", "machine learning"],
+                "sports": ["football", "basketball", "soccer", "game", "team", "player", "match", "championship", "score", "tournament", "athlete"],
+                "business": ["company", "business", "market", "stock", "profit", "earnings", "revenue", "investment", "economy", "corporate", "financial"],
+                "health": ["health", "medical", "doctor", "hospital", "medicine", "treatment", "patient", "disease", "exercise", "diet", "wellness"],
+                "education": ["school", "university", "student", "teacher", "learning", "education", "study", "research", "academic", "knowledge"],
+                "entertainment": ["movie", "music", "celebrity", "film", "concert", "show", "actor", "singer", "entertainment", "performance"],
+                "politics": ["government", "president", "election", "policy", "politician", "vote", "democracy", "congress", "political"],
+                "travel": ["travel", "vacation", "trip", "hotel", "flight", "tourist", "destination", "journey", "passport", "adventure"],
+                "food": ["food", "restaurant", "recipe", "cooking", "chef", "meal", "cuisine", "ingredient", "dish", "taste"],
+                "science": ["science", "research", "experiment", "discovery", "scientist", "laboratory", "theory", "study", "analysis"]
+            }
             
-            tech_count = sum(1 for word in tech_words if word in text_lower)
-            sports_count = sum(1 for word in sports_words if word in text_lower)
+            # Count keywords for each topic
+            topic_scores = {}
+            for topic, keywords in topic_keywords.items():
+                score = sum(1 for keyword in keywords if keyword in text_lower)
+                if score > 0:
+                    topic_scores[topic] = score
             
-            if tech_count > sports_count:
-                return {"label": "technology", "confidence": 0.7}
-            elif sports_count > 0:
-                return {"label": "sports", "confidence": 0.7}
+            if topic_scores:
+                # Get topic with highest score
+                best_topic = max(topic_scores, key=topic_scores.get)
+                confidence = min(0.9, 0.5 + (topic_scores[best_topic] * 0.1))
+                return {"label": best_topic, "confidence": confidence}
             else:
                 return {"label": "general", "confidence": 0.5}
     

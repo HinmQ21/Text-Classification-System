@@ -119,16 +119,62 @@ const App: React.FC = () => {
           </div>
 
           <div className="input-group">
-            <label htmlFor="model-select">Classification Type:</label>
-            <select
-              id="model-select"
-              value={modelType}
-              onChange={(e) => setModelType(e.target.value as 'sentiment' | 'spam' | 'topic')}
-            >
-              <option value="sentiment">Sentiment Analysis (Positive/Negative/Neutral)</option>
-              <option value="spam">Spam Detection (Spam/Not Spam)</option>
-              <option value="topic">Topic Classification</option>
-            </select>
+            <label>Select Classification Model:</label>
+            <div className="model-selection">
+              <div className={`model-option ${modelType === 'sentiment' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  id="sentiment"
+                  name="modelType"
+                  value="sentiment"
+                  checked={modelType === 'sentiment'}
+                  onChange={(e) => setModelType(e.target.value as 'sentiment' | 'spam' | 'topic')}
+                />
+                <label htmlFor="sentiment" className="model-label">
+                  <span className="model-emoji">😊</span>
+                  <div className="model-text">
+                    <span className="model-name">Sentiment</span>
+                    <span className="model-description">Positive/Negative</span>
+                  </div>
+                </label>
+              </div>
+
+              <div className={`model-option ${modelType === 'spam' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  id="spam"
+                  name="modelType"
+                  value="spam"
+                  checked={modelType === 'spam'}
+                  onChange={(e) => setModelType(e.target.value as 'sentiment' | 'spam' | 'topic')}
+                />
+                <label htmlFor="spam" className="model-label">
+                  <span className="model-emoji">🚫</span>
+                  <div className="model-text">
+                    <span className="model-name">Spam Detection</span>
+                    <span className="model-description">Spam/Not Spam</span>
+                  </div>
+                </label>
+              </div>
+
+              <div className={`model-option ${modelType === 'topic' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  id="topic"
+                  name="modelType"
+                  value="topic"
+                  checked={modelType === 'topic'}
+                  onChange={(e) => setModelType(e.target.value as 'sentiment' | 'spam' | 'topic')}
+                />
+                <label htmlFor="topic" className="model-label">
+                  <span className="model-emoji">🏷️</span>
+                  <div className="model-text">
+                    <span className="model-name">Topic</span>
+                    <span className="model-description">Multi-category</span>
+                  </div>
+                </label>
+              </div>
+            </div>
           </div>
 
           <button 
@@ -199,7 +245,7 @@ const App: React.FC = () => {
           <h3>🎯 Try These Examples:</h3>
           <div className="examples">
             <div className="example-group">
-              <h4>Sentiment Analysis:</h4>
+              <h4>Sentiment Analysis 😊:</h4>
               <button 
                 className="example-btn"
                 onClick={() => setText("I absolutely love this product! It's amazing and works perfectly!")}
@@ -214,14 +260,14 @@ const App: React.FC = () => {
               </button>
               <button 
                 className="example-btn"
-                onClick={() => setText("The product is okay. Nothing special but it works.")}
+                onClick={() => setText("I went to the store to buy some groceries.")}
               >
                 Neutral Example
               </button>
             </div>
             
             <div className="example-group">
-              <h4>Spam Detection:</h4>
+              <h4>Spam Detection 🚫:</h4>
               <button 
                 className="example-btn"
                 onClick={() => setText("FREE MONEY! Click now to win $1000! Limited time offer!")}
@@ -233,6 +279,28 @@ const App: React.FC = () => {
                 onClick={() => setText("Hi, I wanted to follow up on our meeting yesterday about the project timeline.")}
               >
                 Not Spam Example
+              </button>
+            </div>
+
+            <div className="example-group">
+              <h4>Topic Classification 🏷️:</h4>
+              <button 
+                className="example-btn"
+                onClick={() => setText("The new AI programming language makes machine learning development much faster and easier for developers.")}
+              >
+                Technology Example
+              </button>
+              <button 
+                className="example-btn"
+                onClick={() => setText("The basketball team won the championship after an incredible final game with a score of 95-88.")}
+              >
+                Sports Example
+              </button>
+              <button 
+                className="example-btn"
+                onClick={() => setText("The company's quarterly earnings exceeded expectations, driving stock prices up by 15% in early trading.")}
+              >
+                Business Example
               </button>
             </div>
           </div>
