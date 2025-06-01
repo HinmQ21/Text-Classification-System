@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Literal, Union
 from datetime import datetime
+import uuid
 
 class TextClassificationRequest(BaseModel):
     """Request model for text classification"""
@@ -77,3 +78,79 @@ class ModelInfo(BaseModel):
 class ModelsResponse(BaseModel):
     """Available models response"""
     available_models: List[ModelInfo]
+
+class CSVUploadRequest(BaseModel):
+    """Request model for CSV upload configuration"""
+    model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
+    batch_size: int = Field(default=16, description="Number of texts to process in each batch")
+    text_column: str = Field(default="text", description="Name of the column containing text to classify")
+
+    @validator('batch_size')
+    def validate_batch_size(cls, v):
+        allowed_sizes = [1, 4, 8, 16, 64, 128, 256]
+        if v not in allowed_sizes:
+            raise ValueError(f'Batch size must be one of {allowed_sizes}')
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "model_type": "sentiment",
+                "batch_size": 16,
+                "text_column": "text"
+            }
+        }
+
+class CSVResultItem(BaseModel):
+    """Individual result item for CSV processing"""
+    row_index: int
+    text: str
+    prediction: str
+    confidence: float
+    language: str
+    processing_time: float
+    error: Optional[str] = None
+
+class CSVBatchResponse(BaseModel):
+    """Response model for CSV batch processing"""
+    job_id: str
+    status: Literal["processing", "completed", "failed"]
+    model_type: str
+    total_rows: int
+    processed_rows: int
+    batch_size: int
+    progress_percentage: float
+    results: List[CSVResultItem]
+    errors: List[str]
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    processing_time: Optional[float] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "job_id": "550e8400-e29b-41d4-a716-446655440000",
+                "status": "completed",
+                "model_type": "sentiment",
+                "total_rows": 100,
+                "processed_rows": 100,
+                "batch_size": 20,
+                "progress_percentage": 100.0,
+                "results": [],
+                "errors": [],
+                "started_at": "2024-01-01T12:00:00",
+                "completed_at": "2024-01-01T12:01:30",
+                "processing_time": 90.5
+            }
+        }
+
+class BatchProcessingStatus(BaseModel):
+    """Status model for batch processing jobs"""
+    job_id: str
+    status: Literal["processing", "completed", "failed"]
+    progress_percentage: float
+    processed_rows: int
+    total_rows: int
+    estimated_time_remaining: Optional[float] = None
+    current_batch: int
+    total_batches: int

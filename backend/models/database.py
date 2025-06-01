@@ -1,8 +1,9 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from datetime import datetime
 import os
+import uuid
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./text_classification.db")
@@ -22,7 +23,7 @@ Base = declarative_base()
 class ClassificationResult(Base):
     """Database model for storing classification results"""
     __tablename__ = "classification_results"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     text = Column(Text, nullable=False)
     model_type = Column(String(50), nullable=False)
@@ -31,6 +32,45 @@ class ClassificationResult(Base):
     language = Column(String(10), nullable=False)
     processing_time = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class CSVProcessingJob(Base):
+    """Database model for storing CSV processing job information"""
+    __tablename__ = "csv_processing_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    model_type = Column(String(50), nullable=False)
+    batch_size = Column(Integer, nullable=False)
+    text_column = Column(String(100), nullable=False)
+    total_rows = Column(Integer, nullable=False)
+    processed_rows = Column(Integer, default=0)
+    status = Column(String(20), default="processing")  # processing, completed, failed
+    progress_percentage = Column(Float, default=0.0)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    processing_time = Column(Float, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Relationship to CSV results
+    csv_results = relationship("CSVResult", back_populates="job", cascade="all, delete-orphan")
+
+class CSVResult(Base):
+    """Database model for storing individual CSV processing results"""
+    __tablename__ = "csv_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String(36), ForeignKey("csv_processing_jobs.job_id"), nullable=False)
+    row_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    prediction = Column(String(100), nullable=False)
+    confidence = Column(Float, nullable=False)
+    language = Column(String(10), nullable=False)
+    processing_time = Column(Float, nullable=False)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship back to job
+    job = relationship("CSVProcessingJob", back_populates="csv_results")
 
 class User(Base):
     """Database model for users (for future use)"""

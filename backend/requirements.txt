@@ -5,3 +5,6 @@ transformers==4.48.0
 torch==2.6.0
 sqlalchemy==2.0.36
 langdetect==1.0.9
+python-multipart==0.0.6
+pandas==2.2.3
+python-dotenv==1.0.1
