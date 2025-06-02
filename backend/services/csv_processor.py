@@ -132,75 +132,90 @@ class CSVProcessorService:
         return job_id
     
     async def _process_csv_batches(
-        self, 
-        job_id: str, 
-        df: pd.DataFrame, 
-        request: CSVUploadRequest, 
+        self,
+        job_id: str,
+        df: pd.DataFrame,
+        request: CSVUploadRequest,
         db: Session
     ):
-        """Process CSV data in batches"""
+        """Process CSV data in batches using HuggingFace pipeline batch processing"""
         try:
             job_info = self.active_jobs[job_id]
             total_rows = len(df)
             batch_size = request.batch_size
-            
+
             # Process in batches
             for batch_start in range(0, total_rows, batch_size):
                 batch_end = min(batch_start + batch_size, total_rows)
                 batch_df = df.iloc[batch_start:batch_end]
-                
+
                 job_info["current_batch"] = (batch_start // batch_size) + 1
-                
-                # Process each text in the batch
+
+                # Collect texts and indices for batch processing
+                batch_texts = []
+                batch_indices = []
+
                 for idx, row in batch_df.iterrows():
-                    try:
-                        text = str(row[request.text_column])
-                        
-                        # Detect language
-                        detected_language = self.language_detector.detect(text)
-                        
-                        # Classify text
-                        start_time = time.time()
-                        result = await self.text_classifier.classify(
-                            text=text,
-                            model_type=request.model_type,
-                            language=detected_language,
-                            model_selection=getattr(request, 'model_selection', 'all')
-                        )
-                        processing_time = time.time() - start_time
-                        
-                        # Create result record
-                        csv_result = CSVResult(
-                            job_id=job_id,
-                            row_index=idx,
-                            text=text,
-                            prediction=result["prediction"],
-                            confidence=result["confidence"],
-                            language=detected_language,
-                            processing_time=processing_time
-                        )
-                        db.add(csv_result)
-                        
-                        # Add to in-memory results
-                        job_info["results"].append({
-                            "row_index": idx,
-                            "text": text,
-                            "prediction": result["prediction"],
-                            "confidence": result["confidence"],
-                            "language": detected_language,
-                            "processing_time": processing_time
-                        })
-                        
-                        job_info["processed_rows"] += 1
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing row {idx}: {str(e)}")
-                        job_info["errors"].append(f"Row {idx}: {str(e)}")
-                
+                    text = str(row[request.text_column])
+                    batch_texts.append(text)
+                    batch_indices.append(idx)
+
+                # Process the entire batch at once using pipeline batch processing
+                try:
+                    start_time = time.time()
+                    batch_results = await self.text_classifier.classify_batch(
+                        texts=batch_texts,
+                        model_type=request.model_type,
+                        batch_size=batch_size,
+                        language=None,  # Let it auto-detect for each text
+                        model_selection=getattr(request, 'model_selection', 'all')
+                    )
+                    batch_processing_time = time.time() - start_time
+
+                    # Process results for each text in the batch
+                    for i, (idx, text, result) in enumerate(zip(batch_indices, batch_texts, batch_results)):
+                        try:
+                            # Create result record
+                            csv_result = CSVResult(
+                                job_id=job_id,
+                                row_index=idx,
+                                text=text,
+                                prediction=result["prediction"],
+                                confidence=result["confidence"],
+                                language=result["detected_language"],
+                                processing_time=result["processing_time"]
+                            )
+                            db.add(csv_result)
+
+                            # Add to in-memory results
+                            job_info["results"].append({
+                                "row_index": idx,
+                                "text": text,
+                                "prediction": result["prediction"],
+                                "confidence": result["confidence"],
+                                "language": result["detected_language"],
+                                "processing_time": result["processing_time"]
+                            })
+
+                            job_info["processed_rows"] += 1
+
+                        except Exception as e:
+                            logger.error(f"Error processing result for row {idx}: {str(e)}")
+                            job_info["errors"].append(f"Row {idx}: {str(e)}")
+
+                    logger.info(f"Processed batch {job_info['current_batch']}/{job_info['total_batches']} "
+                              f"with {len(batch_texts)} texts in {batch_processing_time:.2f}s")
+
+                except Exception as e:
+                    logger.error(f"Error processing batch {job_info['current_batch']}: {str(e)}")
+                    # Add error for all texts in the failed batch
+                    for idx in batch_indices:
+                        job_info["errors"].append(f"Row {idx}: Batch processing failed - {str(e)}")
+
                 # Update progress
                 progress = (job_info["processed_rows"] / total_rows) * 100
                 job_info["progress_percentage"] = progress
-                
+
                 # Update database
                 db.query(CSVProcessingJob).filter(
                     CSVProcessingJob.job_id == job_id
@@ -209,7 +224,7 @@ class CSVProcessorService:
                     "progress_percentage": progress
                 })
                 db.commit()
-                
+
                 # Small delay between batches to prevent overwhelming the system
                 await asyncio.sleep(0.1)
             

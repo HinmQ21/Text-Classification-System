@@ -608,6 +608,256 @@ Input text:
                 "all_scores": score_dict
             }
     
+    async def classify_batch(self, texts: List[str], model_type: str, batch_size: int,
+                            language: str = None, temperature: float = 1.0,
+                            model_selection: Union[str, List[str]] = "all") -> List[Dict[str, Any]]:
+        """
+        Classify multiple texts using batch processing with HuggingFace pipelines
+
+        Args:
+            texts: List of input texts to classify
+            model_type: Type of classification (sentiment, spam, topic)
+            batch_size: Batch size for pipeline processing
+            language: Language of the texts (if None, will auto-detect for each text)
+            temperature: Temperature for softmax scaling (0.5-2.0)
+            model_selection: Which models to use ("all", single model key, or list of model keys)
+
+        Returns:
+            List of dictionaries with prediction, confidence, all scores, and processing time for each text
+        """
+        start_time = time.time()
+
+        try:
+            if model_type not in self.models:
+                raise ValueError(f"Model type '{model_type}' not supported")
+
+            # Clamp temperature to valid range
+            temperature = max(0.5, min(2.0, temperature))
+
+            # Preprocess all texts
+            processed_texts = []
+            detected_languages = []
+
+            for text in texts:
+                processed_text = await self._preprocess_text(text, language)
+                processed_texts.append(processed_text)
+
+                # Detect language for each text if not provided
+                if language is None:
+                    detected_lang = self._detect_language(processed_text)
+                    detected_languages.append(detected_lang)
+                else:
+                    detected_languages.append(language)
+
+            # Determine which models to use
+            available_models = list(self.models[model_type].keys())
+            if not available_models:
+                raise ValueError(f"No models available for type '{model_type}'")
+
+            if model_selection == "all":
+                selected_models = available_models
+            elif isinstance(model_selection, str):
+                if model_selection in available_models:
+                    selected_models = [model_selection]
+                else:
+                    raise ValueError(f"Model '{model_selection}' not available for type '{model_type}'")
+            elif isinstance(model_selection, list):
+                selected_models = [m for m in model_selection if m in available_models]
+                if not selected_models:
+                    raise ValueError(f"None of the specified models are available for type '{model_type}'")
+            else:
+                selected_models = available_models
+
+            # Perform batch classification with selected models
+            all_predictions = []
+            model_results = {}
+
+            for model_key in selected_models:
+                try:
+                    batch_results = await self._model_classify_batch(
+                        processed_texts, model_type, model_key, batch_size, temperature
+                    )
+                    all_predictions.append(batch_results)
+                    model_results[model_key] = batch_results
+                    logger.info(f"Successfully classified batch with model {model_key}")
+                except Exception as e:
+                    logger.error(f"Error with model {model_key}: {e}")
+                    continue
+
+            if not all_predictions:
+                raise ValueError("All models failed to classify the texts")
+
+            # Combine predictions if multiple models were used
+            final_results = []
+            for i in range(len(texts)):
+                text_predictions = []
+                text_model_results = {}
+
+                for j, model_key in enumerate(selected_models):
+                    if j < len(all_predictions) and i < len(all_predictions[j]):
+                        text_predictions.append(all_predictions[j][i])
+                        text_model_results[model_key] = all_predictions[j][i]
+
+                if len(text_predictions) > 1:
+                    final_result = self._ensemble_predictions(text_predictions, "average")
+                    is_ensemble = True
+                elif len(text_predictions) == 1:
+                    final_result = text_predictions[0]
+                    is_ensemble = False
+                else:
+                    # Fallback for failed predictions
+                    final_result = {
+                        "label": "unknown",
+                        "confidence": 0.0,
+                        "all_scores": {}
+                    }
+                    is_ensemble = False
+
+                processing_time = time.time() - start_time
+
+                result = {
+                    "prediction": final_result["label"],
+                    "confidence": final_result["confidence"],
+                    "all_scores": final_result["all_scores"],
+                    "temperature": temperature,
+                    "processing_time": processing_time / len(texts),  # Average per text
+                    "is_ensemble": is_ensemble,
+                    "models_used": selected_models,
+                    "individual_results": text_model_results if len(text_predictions) > 1 else None,
+                    "detected_language": detected_languages[i]
+                }
+
+                final_results.append(result)
+
+            return final_results
+
+        except Exception as e:
+            logger.error(f"Batch classification error: {e}")
+            processing_time = time.time() - start_time
+
+            # Return error results for all texts
+            error_results = []
+            for i in range(len(texts)):
+                error_results.append({
+                    "prediction": "unknown",
+                    "confidence": 0.0,
+                    "all_scores": {},
+                    "temperature": temperature,
+                    "processing_time": processing_time / len(texts),
+                    "is_ensemble": False,
+                    "models_used": [],
+                    "individual_results": None,
+                    "detected_language": "unknown"
+                })
+
+            return error_results
+
+    async def _model_classify_batch(self, texts: List[str], model_type: str, model_key: str,
+                                   batch_size: int, temperature: float = 1.0) -> List[Dict[str, Any]]:
+        """Classify batch of texts using actual ML models with pipeline batch processing"""
+        model = self.models[model_type][model_key]
+
+        if model_type == "sentiment":
+            # Use pipeline batch processing
+            results = model(texts, batch_size=batch_size)
+
+            batch_results = []
+            for result in results:
+                # Extract all scores and apply temperature
+                all_scores = result  # List of {'label': str, 'score': float}
+                labels = [item['label'].lower() for item in all_scores]
+                probabilities = [item['score'] for item in all_scores]
+
+                # Apply temperature scaling
+                temp_scores = self._probabilities_to_logits_with_temperature(probabilities, temperature)
+
+                # Create score dictionary
+                score_dict = dict(zip(labels, temp_scores))
+
+                # Find best prediction
+                best_idx = np.argmax(temp_scores)
+                best_label = labels[best_idx]
+                best_confidence = temp_scores[best_idx]
+
+                batch_results.append({
+                    "label": best_label,
+                    "confidence": best_confidence,
+                    "all_scores": score_dict
+                })
+
+            return batch_results
+
+        elif model_type == "spam":
+            # Use pipeline batch processing
+            results = model(texts, batch_size=batch_size)
+
+            batch_results = []
+            for result in results:
+                all_scores = result
+
+                # Map labels to more readable format
+                mapped_probabilities = []
+                mapped_labels = []
+                for item in all_scores:
+                    if item['label'] == "LABEL_1":
+                        mapped_labels.append("spam")
+                        mapped_probabilities.append(item['score'])
+                    else:
+                        mapped_labels.append("not_spam")
+                        mapped_probabilities.append(item['score'])
+
+                # Apply temperature scaling
+                temp_scores = self._probabilities_to_logits_with_temperature(mapped_probabilities, temperature)
+
+                # Create score dictionary
+                score_dict = dict(zip(mapped_labels, temp_scores))
+
+                # Find best prediction
+                best_idx = np.argmax(temp_scores)
+                best_label = mapped_labels[best_idx]
+                best_confidence = temp_scores[best_idx]
+
+                batch_results.append({
+                    "label": best_label,
+                    "confidence": best_confidence,
+                    "all_scores": score_dict
+                })
+
+            return batch_results
+
+        elif model_type == "topic":
+            # Define candidate topics for zero-shot classification
+            candidate_labels = [
+                "technology", "sports", "politics", "entertainment",
+                "business", "health", "education", "travel", "food", "science"
+            ]
+
+            batch_results = []
+            # For zero-shot classification, we need to process each text individually
+            # as the pipeline expects (text, candidate_labels) format
+            for text in texts:
+                result = model(text, candidate_labels)
+
+                # Apply temperature scaling to the scores
+                probabilities = result['scores']
+                temp_scores = self._probabilities_to_logits_with_temperature(probabilities, temperature)
+
+                # Create score dictionary
+                score_dict = dict(zip(result['labels'], temp_scores))
+
+                # Find best prediction
+                best_idx = np.argmax(temp_scores)
+                best_label = result['labels'][best_idx]
+                best_confidence = temp_scores[best_idx]
+
+                batch_results.append({
+                    "label": best_label,
+                    "confidence": best_confidence,
+                    "all_scores": score_dict
+                })
+
+            return batch_results
+
     def is_ready(self) -> bool:
         """Check if service is ready"""
         return self.ready
