@@ -69,19 +69,9 @@ class TextClassifierService:
             
         except Exception as e:
             logger.error(f"Failed to initialize models: {e}")
-            # Fallback to simple rule-based classification for demo
-            self._initialize_fallback_models()
+            # Remove fallback initialization since it's not needed
+            raise e
     
-    def _initialize_fallback_models(self):
-        """Initialize simple fallback models for demo purposes"""
-        logger.info("Initializing fallback models...")
-        self.models = {
-            "sentiment": "fallback",
-            "spam": "fallback", 
-            "topic": "fallback"
-        }
-        self.ready = True
-        
     def _softmax_with_temperature(self, logits: List[float], temperature: float = 1.0) -> List[float]:
         """
         Apply softmax with temperature scaling
@@ -169,10 +159,7 @@ class TextClassifierService:
             processed_text = await self._preprocess_text(text, language)
             
             # Perform classification
-            if self.models[model_type] == "fallback":
-                result = self._fallback_classify(processed_text, model_type, temperature)
-            else:
-                result = await self._model_classify(processed_text, model_type, temperature)
+            result = await self._model_classify(processed_text, model_type, temperature)
             
             processing_time = time.time() - start_time
             
@@ -452,113 +439,6 @@ Input text:
             # Find best prediction
             best_idx = np.argmax(temp_scores)
             best_label = result['labels'][best_idx]
-            best_confidence = temp_scores[best_idx]
-            
-            return {
-                "label": best_label,
-                "confidence": best_confidence,
-                "all_scores": score_dict
-            }
-    
-    def _fallback_classify(self, text: str, model_type: str, temperature: float = 1.0) -> Dict[str, Any]:
-        """Simple rule-based classification for demo"""
-        text_lower = text.lower()
-        
-        if model_type == "sentiment":
-            positive_words = ["good", "great", "excellent", "amazing", "love", "wonderful", "fantastic"]
-            negative_words = ["bad", "terrible", "awful", "hate", "horrible", "worst"]
-            
-            pos_count = sum(1 for word in positive_words if word in text_lower)
-            neg_count = sum(1 for word in negative_words if word in text_lower)
-            
-            # Create raw scores based on word counts
-            if pos_count > neg_count:
-                raw_scores = [0.8, 0.1, 0.1]  # positive, negative, neutral
-            elif neg_count > pos_count:
-                raw_scores = [0.1, 0.8, 0.1]  # positive, negative, neutral
-            else:
-                raw_scores = [0.2, 0.2, 0.6]  # positive, negative, neutral
-            
-            # Apply temperature scaling
-            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
-            labels = ["positive", "negative", "neutral"]
-            
-            # Create score dictionary
-            score_dict = dict(zip(labels, temp_scores))
-            
-            # Find best prediction
-            best_idx = np.argmax(temp_scores)
-            best_label = labels[best_idx]
-            best_confidence = temp_scores[best_idx]
-            
-            return {
-                "label": best_label,
-                "confidence": best_confidence,
-                "all_scores": score_dict
-            }
-                
-        elif model_type == "spam":
-            spam_words = ["free", "win", "money", "click", "urgent", "limited", "offer"]
-            spam_count = sum(1 for word in spam_words if word in text_lower)
-            
-            # Create raw scores based on spam word count
-            if spam_count >= 2:
-                raw_scores = [0.8, 0.2]  # spam, not_spam
-            else:
-                raw_scores = [0.2, 0.8]  # spam, not_spam
-            
-            # Apply temperature scaling
-            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
-            labels = ["spam", "not_spam"]
-            
-            # Create score dictionary
-            score_dict = dict(zip(labels, temp_scores))
-            
-            # Find best prediction
-            best_idx = np.argmax(temp_scores)
-            best_label = labels[best_idx]
-            best_confidence = temp_scores[best_idx]
-            
-            return {
-                "label": best_label,
-                "confidence": best_confidence,
-                "all_scores": score_dict
-            }
-                
-        elif model_type == "topic":
-            # Enhanced topic classification with more categories
-            topic_keywords = {
-                "technology": ["computer", "software", "technology", "ai", "programming", "digital", "internet", "app", "code", "algorithm", "data", "machine learning"],
-                "sports": ["football", "basketball", "soccer", "game", "team", "player", "match", "championship", "score", "tournament", "athlete"],
-                "business": ["company", "business", "market", "stock", "profit", "earnings", "revenue", "investment", "economy", "corporate", "financial"],
-                "health": ["health", "medical", "doctor", "hospital", "medicine", "treatment", "patient", "disease", "exercise", "diet", "wellness"],
-                "education": ["school", "university", "student", "teacher", "learning", "education", "study", "research", "academic", "knowledge"],
-                "entertainment": ["movie", "music", "celebrity", "film", "concert", "show", "actor", "singer", "entertainment", "performance"],
-                "politics": ["government", "president", "election", "policy", "politician", "vote", "democracy", "congress", "political"],
-                "travel": ["travel", "vacation", "trip", "hotel", "flight", "tourist", "destination", "journey", "passport", "adventure"],
-                "food": ["food", "restaurant", "recipe", "cooking", "chef", "meal", "cuisine", "ingredient", "dish", "taste"],
-                "science": ["science", "research", "experiment", "discovery", "scientist", "laboratory", "theory", "study", "analysis"]
-            }
-            
-            # Count keywords for each topic
-            topic_scores = {}
-            for topic, keywords in topic_keywords.items():
-                score = sum(1 for keyword in keywords if keyword in text_lower)
-                topic_scores[topic] = score
-            
-            # Convert to raw scores (add small base score to avoid zero probabilities)
-            labels = list(topic_keywords.keys())
-            raw_scores = [topic_scores.get(topic, 0) + 0.1 for topic in labels]
-            
-            # Apply temperature scaling
-            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
-            
-            # Create score dictionary
-            score_dict = dict(zip(labels, temp_scores))
-            
-            # Find best prediction
-            best_idx = np.argmax(temp_scores)
-            best_label = labels[best_idx]
             best_confidence = temp_scores[best_idx]
             
             return {
