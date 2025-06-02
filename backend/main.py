@@ -84,11 +84,12 @@ async def classify_text(
         # Detect language
         detected_language = language_detector.detect(request.text)
         
-        # Classify text
+        # Classify text with temperature parameter
         result = await text_classifier.classify(
             text=request.text,
             model_type=request.model_type,
-            language=detected_language
+            language=detected_language,
+            temperature=request.temperature
         )
         
         # Save to database (optional for demo)
@@ -99,6 +100,8 @@ async def classify_text(
             model_type=request.model_type,
             prediction=result["prediction"],
             confidence=result["confidence"],
+            all_scores=result["all_scores"],
+            temperature=result["temperature"],
             language=detected_language,
             processing_time=result.get("processing_time", 0),
             timestamp=datetime.now()

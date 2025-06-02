@@ -2,7 +2,8 @@ import time
 import logging
 import re
 import unicodedata
-from typing import Dict, Any
+import numpy as np
+from typing import Dict, Any, List
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from langdetect import detect, DetectorFactory
 import os
@@ -62,7 +63,35 @@ class TextClassifierService:
         }
         self.ready = True
         
-    async def classify(self, text: str, model_type: str, language: str = None) -> Dict[str, Any]:
+    def _softmax_with_temperature(self, logits: List[float], temperature: float = 1.0) -> List[float]:
+        """
+        Apply softmax with temperature scaling
+        
+        Args:
+            logits: Raw prediction scores
+            temperature: Temperature parameter (0.5-2.0)
+                        - Lower values (< 1.0) make the model more confident
+                        - Higher values (> 1.0) make the model less confident
+                        
+        Returns:
+            Probability distribution after temperature scaling
+        """
+        if temperature <= 0:
+            temperature = 1.0
+            
+        # Convert to numpy array for easier computation
+        logits_array = np.array(logits, dtype=np.float64)
+        
+        # Apply temperature scaling
+        scaled_logits = logits_array / temperature
+        
+        # Apply softmax
+        exp_logits = np.exp(scaled_logits - np.max(scaled_logits))  # Subtract max for numerical stability
+        probabilities = exp_logits / np.sum(exp_logits)
+        
+        return probabilities.tolist()
+        
+    async def classify(self, text: str, model_type: str, language: str = None, temperature: float = 1.0) -> Dict[str, Any]:
         """
         Classify text using specified model
         
@@ -70,9 +99,10 @@ class TextClassifierService:
             text: Input text to classify
             model_type: Type of classification (sentiment, spam, topic)
             language: Language of the text (if None, will auto-detect)
+            temperature: Temperature for softmax scaling (0.5-2.0)
             
         Returns:
-            Dictionary with prediction, confidence, and processing time
+            Dictionary with prediction, confidence, all scores, and processing time
         """
         start_time = time.time()
         
@@ -80,20 +110,25 @@ class TextClassifierService:
             if model_type not in self.models:
                 raise ValueError(f"Model type '{model_type}' not supported")
             
+            # Clamp temperature to valid range
+            temperature = max(0.5, min(2.0, temperature))
+            
             # Advanced text preprocessing with language detection and translation
             processed_text = await self._preprocess_text(text, language)
             
             # Perform classification
             if self.models[model_type] == "fallback":
-                result = self._fallback_classify(processed_text, model_type)
+                result = self._fallback_classify(processed_text, model_type, temperature)
             else:
-                result = await self._model_classify(processed_text, model_type)
+                result = await self._model_classify(processed_text, model_type, temperature)
             
             processing_time = time.time() - start_time
             
             return {
                 "prediction": result["label"],
                 "confidence": result["confidence"],
+                "all_scores": result["all_scores"],
+                "temperature": temperature,
                 "processing_time": processing_time
             }
             
@@ -103,6 +138,8 @@ class TextClassifierService:
             return {
                 "prediction": "unknown",
                 "confidence": 0.0,
+                "all_scores": [],
+                "temperature": temperature,
                 "processing_time": processing_time
             }
     
@@ -236,27 +273,64 @@ class TextClassifierService:
         
         return text
     
-    async def _model_classify(self, text: str, model_type: str) -> Dict[str, Any]:
+    async def _model_classify(self, text: str, model_type: str, temperature: float = 1.0) -> Dict[str, Any]:
         """Classify using actual ML models"""
         model = self.models[model_type]
         
         if model_type == "sentiment":
             results = model(text)
-            # Get the highest confidence prediction
-            best_result = max(results[0], key=lambda x: x['score'])
+            # Extract all scores and apply temperature
+            all_scores = results[0]  # List of {'label': str, 'score': float}
+            labels = [item['label'].lower() for item in all_scores]
+            raw_scores = [item['score'] for item in all_scores]
+            
+            # Apply temperature scaling
+            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            
+            # Create score dictionary
+            score_dict = dict(zip(labels, temp_scores))
+            
+            # Find best prediction
+            best_idx = np.argmax(temp_scores)
+            best_label = labels[best_idx]
+            best_confidence = temp_scores[best_idx]
+            
             return {
-                "label": best_result['label'].lower(),
-                "confidence": best_result['score']
+                "label": best_label,
+                "confidence": best_confidence,
+                "all_scores": score_dict
             }
             
         elif model_type == "spam":
             results = model(text)
-            best_result = max(results[0], key=lambda x: x['score'])
-            # Map toxic-bert labels to spam/not_spam
-            label = "spam" if best_result['label'] == "LABEL_1" else "not_spam"
+            all_scores = results[0]
+            
+            # Map labels to more readable format
+            mapped_scores = []
+            mapped_labels = []
+            for item in all_scores:
+                if item['label'] == "LABEL_1":
+                    mapped_labels.append("spam")
+                    mapped_scores.append(item['score'])
+                else:
+                    mapped_labels.append("not_spam")
+                    mapped_scores.append(item['score'])
+            
+            # Apply temperature scaling
+            temp_scores = self._softmax_with_temperature(mapped_scores, temperature)
+            
+            # Create score dictionary
+            score_dict = dict(zip(mapped_labels, temp_scores))
+            
+            # Find best prediction
+            best_idx = np.argmax(temp_scores)
+            best_label = mapped_labels[best_idx]
+            best_confidence = temp_scores[best_idx]
+            
             return {
-                "label": label,
-                "confidence": best_result['score']
+                "label": best_label,
+                "confidence": best_confidence,
+                "all_scores": score_dict
             }
             
         elif model_type == "topic":
@@ -266,12 +340,26 @@ class TextClassifierService:
                 "business", "health", "education", "travel", "food", "science"
             ]
             result = model(text, candidate_labels)
+            
+            # Apply temperature scaling to the scores
+            raw_scores = result['scores']
+            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            
+            # Create score dictionary
+            score_dict = dict(zip(result['labels'], temp_scores))
+            
+            # Find best prediction
+            best_idx = np.argmax(temp_scores)
+            best_label = result['labels'][best_idx]
+            best_confidence = temp_scores[best_idx]
+            
             return {
-                "label": result['labels'][0],
-                "confidence": result['scores'][0]
+                "label": best_label,
+                "confidence": best_confidence,
+                "all_scores": score_dict
             }
     
-    def _fallback_classify(self, text: str, model_type: str) -> Dict[str, Any]:
+    def _fallback_classify(self, text: str, model_type: str, temperature: float = 1.0) -> Dict[str, Any]:
         """Simple rule-based classification for demo"""
         text_lower = text.lower()
         
@@ -282,21 +370,59 @@ class TextClassifierService:
             pos_count = sum(1 for word in positive_words if word in text_lower)
             neg_count = sum(1 for word in negative_words if word in text_lower)
             
+            # Create raw scores based on word counts
             if pos_count > neg_count:
-                return {"label": "positive", "confidence": 0.8}
+                raw_scores = [0.8, 0.1, 0.1]  # positive, negative, neutral
             elif neg_count > pos_count:
-                return {"label": "negative", "confidence": 0.8}
+                raw_scores = [0.1, 0.8, 0.1]  # positive, negative, neutral
             else:
-                return {"label": "neutral", "confidence": 0.6}
+                raw_scores = [0.2, 0.2, 0.6]  # positive, negative, neutral
+            
+            # Apply temperature scaling
+            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            labels = ["positive", "negative", "neutral"]
+            
+            # Create score dictionary
+            score_dict = dict(zip(labels, temp_scores))
+            
+            # Find best prediction
+            best_idx = np.argmax(temp_scores)
+            best_label = labels[best_idx]
+            best_confidence = temp_scores[best_idx]
+            
+            return {
+                "label": best_label,
+                "confidence": best_confidence,
+                "all_scores": score_dict
+            }
                 
         elif model_type == "spam":
             spam_words = ["free", "win", "money", "click", "urgent", "limited", "offer"]
             spam_count = sum(1 for word in spam_words if word in text_lower)
             
+            # Create raw scores based on spam word count
             if spam_count >= 2:
-                return {"label": "spam", "confidence": 0.7}
+                raw_scores = [0.8, 0.2]  # spam, not_spam
             else:
-                return {"label": "not_spam", "confidence": 0.8}
+                raw_scores = [0.2, 0.8]  # spam, not_spam
+            
+            # Apply temperature scaling
+            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            labels = ["spam", "not_spam"]
+            
+            # Create score dictionary
+            score_dict = dict(zip(labels, temp_scores))
+            
+            # Find best prediction
+            best_idx = np.argmax(temp_scores)
+            best_label = labels[best_idx]
+            best_confidence = temp_scores[best_idx]
+            
+            return {
+                "label": best_label,
+                "confidence": best_confidence,
+                "all_scores": score_dict
+            }
                 
         elif model_type == "topic":
             # Enhanced topic classification with more categories
@@ -317,16 +443,28 @@ class TextClassifierService:
             topic_scores = {}
             for topic, keywords in topic_keywords.items():
                 score = sum(1 for keyword in keywords if keyword in text_lower)
-                if score > 0:
-                    topic_scores[topic] = score
+                topic_scores[topic] = score
             
-            if topic_scores:
-                # Get topic with highest score
-                best_topic = max(topic_scores, key=topic_scores.get)
-                confidence = min(0.9, 0.5 + (topic_scores[best_topic] * 0.1))
-                return {"label": best_topic, "confidence": confidence}
-            else:
-                return {"label": "general", "confidence": 0.5}
+            # Convert to raw scores (add small base score to avoid zero probabilities)
+            labels = list(topic_keywords.keys())
+            raw_scores = [topic_scores.get(topic, 0) + 0.1 for topic in labels]
+            
+            # Apply temperature scaling
+            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            
+            # Create score dictionary
+            score_dict = dict(zip(labels, temp_scores))
+            
+            # Find best prediction
+            best_idx = np.argmax(temp_scores)
+            best_label = labels[best_idx]
+            best_confidence = temp_scores[best_idx]
+            
+            return {
+                "label": best_label,
+                "confidence": best_confidence,
+                "all_scores": score_dict
+            }
     
     def is_ready(self) -> bool:
         """Check if service is ready"""

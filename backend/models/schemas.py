@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Literal, Union
+from typing import List, Optional, Literal, Union, Dict
 from datetime import datetime
 import uuid
 
@@ -7,12 +7,14 @@ class TextClassificationRequest(BaseModel):
     """Request model for text classification"""
     text: str = Field(..., min_length=1, max_length=10000, description="Text to classify")
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
+    temperature: float = Field(default=1.0, ge=0.5, le=2.0, description="Temperature for softmax scaling (0.5-2.0)")
     
     class Config:
         schema_extra = {
             "example": {
                 "text": "I love this product! It's amazing!",
-                "model_type": "sentiment"
+                "model_type": "sentiment",
+                "temperature": 1.0
             }
         }
 
@@ -22,6 +24,8 @@ class TextClassificationResponse(BaseModel):
     model_type: str
     prediction: str
     confidence: float = Field(..., ge=0.0, le=1.0)
+    all_scores: Dict[str, float] = Field(..., description="Scores for all labels")
+    temperature: float = Field(..., description="Temperature used for classification")
     language: str
     processing_time: float
     timestamp: datetime
@@ -33,6 +37,12 @@ class TextClassificationResponse(BaseModel):
                 "model_type": "sentiment",
                 "prediction": "positive",
                 "confidence": 0.95,
+                "all_scores": {
+                    "positive": 0.95,
+                    "negative": 0.03,
+                    "neutral": 0.02
+                },
+                "temperature": 1.0,
                 "language": "en",
                 "processing_time": 0.123,
                 "timestamp": "2024-01-01T12:00:00"
@@ -43,6 +53,7 @@ class BatchRequest(BaseModel):
     """Request model for batch text classification"""
     texts: List[str] = Field(..., min_items=1, max_items=100, description="List of texts to classify")
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
+    temperature: float = Field(default=1.0, ge=0.5, le=2.0, description="Temperature for softmax scaling (0.5-2.0)")
     
     class Config:
         schema_extra = {
@@ -52,7 +63,8 @@ class BatchRequest(BaseModel):
                     "This is terrible",
                     "It's okay, nothing special"
                 ],
-                "model_type": "sentiment"
+                "model_type": "sentiment",
+                "temperature": 1.0
             }
         }
 

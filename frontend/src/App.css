@@ -122,16 +122,19 @@
 
 .result-card {
   background: #f8f9fa;
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 25px;
   margin-top: 20px;
   border-left: 4px solid #28a745;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 .result-card h3 {
   margin-top: 0;
-  margin-bottom: 20px;
+  margin-bottom: 25px;
   color: #495057;
+  text-align: center;
+  font-size: 1.4rem;
 }
 
 .confidence-bar {
@@ -191,14 +194,21 @@
 }
 
 .prediction {
-  font-size: 1.2rem;
+  display: inline-block;
+  font-size: 1.1rem;
   font-weight: 600;
   margin-left: 10px;
-  padding: 4px 12px;
+  padding: 6px 16px;
   background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
   color: white;
-  border-radius: 20px;
-  display: inline-block;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+  transition: all 0.3s ease;
+}
+
+.prediction:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
 }
 
 .examples {
@@ -752,5 +762,590 @@
   
   .batch-size-display strong {
     font-size: 15px;
+  }
+}
+
+/* Model Configuration Container */
+.model-config-container {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 30px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .model-config-container {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+/* Temperature Control */
+.temperature-control {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  border: 2px solid #e9ecef;
+}
+
+.temperature-info {
+  margin-bottom: 15px;
+}
+
+.temperature-info small {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.temperature-input-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 15px 0;
+  padding: 12px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.temperature-value-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.temperature-value-input label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+  margin: 0;
+  min-width: 45px;
+}
+
+.temperature-number-input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 2px solid #dee2e6;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  transition: all 0.3s ease;
+  background: #fff;
+}
+
+.temperature-number-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+.temperature-number-input:invalid {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.1);
+}
+
+.temperature-range {
+  display: flex;
+  align-items: center;
+}
+
+.range-label {
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: 500;
+  background: #e9ecef;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin: 15px 0;
+}
+
+.temperature-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #ff6b6b, #feca57, #48dbfb, #0abde3);
+  outline: none;
+  cursor: pointer;
+}
+
+.temperature-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #667eea;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.temperature-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.temperature-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #667eea;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.temperature-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.slider-label {
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: 600;
+  min-width: 30px;
+  text-align: center;
+}
+
+.temperature-description {
+  text-align: center;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 20px;
+  margin-top: 10px;
+  font-size: 13px;
+  background: #e9ecef;
+  color: #495057;
+  transition: all 0.3s ease;
+}
+
+/* Temperature mode specific styling */
+.temperature-description {
+  background: #e8f4f8;
+  color: #0984e3;
+}
+
+.temperature-description.high-confidence {
+  background: #ffe8e8;
+  color: #d63031;
+}
+
+.temperature-description.balanced {
+  background: #e8f4f8;
+  color: #0984e3;
+}
+
+.temperature-description.exploratory {
+  background: #f0e8ff;
+  color: #6c5ce7;
+}
+
+/* Responsive design for temperature control */
+@media (max-width: 768px) {
+  .temperature-input-section {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+  
+  .temperature-value-input {
+    justify-content: center;
+  }
+  
+  .temperature-number-input {
+    width: 100px;
+  }
+  
+  .range-label {
+    text-align: center;
+  }
+}
+
+/* Result Grid Layout */
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  align-items: start;
+}
+
+@media (max-width: 968px) {
+  .result-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.result-info {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.result-chart {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.result-chart h4 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #495057;
+  text-align: center;
+}
+
+.chart-container {
+  position: relative;
+  height: 300px;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.chart-container:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.chart-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  border-radius: 8px;
+}
+
+.chart-container:hover .chart-overlay {
+  opacity: 1;
+}
+
+.expand-icon {
+  font-size: 2rem;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.expand-text {
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* Chart Modal Styles */
+.chart-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.chart-modal {
+  background: white;
+  border-radius: 12px;
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 100%;
+  max-width: 1200px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideInScale 0.3s ease-out;
+}
+
+.chart-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e9ecef;
+  background: #f8f9fa;
+}
+
+.chart-modal-header h3 {
+  margin: 0;
+  color: #495057;
+  font-size: 1.5rem;
+}
+
+.modal-close-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.modal-close-btn:hover {
+  background: #495057;
+  transform: scale(1.1);
+}
+
+.chart-modal-content {
+  padding: 24px;
+  max-height: calc(90vh - 80px);
+  overflow-y: auto;
+}
+
+.modal-chart-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.modal-info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.modal-info-item strong {
+  color: #495057;
+  min-width: 80px;
+}
+
+.modal-chart-container {
+  height: 400px;
+  margin-bottom: 30px;
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.modal-scores-table {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.modal-scores-table h4 {
+  margin: 0 0 20px 0;
+  color: #495057;
+  text-align: center;
+}
+
+.scores-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.score-item {
+  background: white;
+  border-radius: 6px;
+  padding: 12px 16px;
+  border-left: 4px solid #6c757d;
+  transition: all 0.3s ease;
+}
+
+.score-item.best-score {
+  border-left-color: #28a745;
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
+}
+
+.score-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.best-badge {
+  background: #28a745;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.score-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #495057;
+  margin-bottom: 8px;
+}
+
+.score-bar {
+  width: 100%;
+  height: 6px;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s ease-out;
+}
+
+/* Modal Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(-50px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Responsive Modal */
+@media (max-width: 768px) {
+  .chart-modal {
+    margin: 10px;
+    max-height: 95vh;
+  }
+  
+  .chart-modal-header {
+    padding: 16px 20px;
+  }
+  
+  .chart-modal-header h3 {
+    font-size: 1.3rem;
+  }
+  
+  .chart-modal-content {
+    padding: 20px;
+  }
+  
+  .modal-chart-container {
+    height: 300px;
+    padding: 12px;
+  }
+  
+  .modal-chart-info {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .expand-icon {
+    font-size: 1.5rem;
+  }
+  
+  .expand-text {
+    font-size: 12px;
+  }
+}
+
+/* Enhanced chart container for desktop */
+@media (min-width: 969px) {
+  .chart-container {
+    height: 350px;
+  }
+  
+  .modal-chart-container {
+    height: 500px;
+  }
+}
+
+/* Temperature mode indicators */
+.temperature-control label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #495057;
+}
+
+/* Animation for chart appearance */
+.chart-container {
+  animation: chartFadeIn 0.8s ease-out;
+}
+
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Temperature control animations */
+.temperature-control {
+  animation: slideInRight 0.6s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Model selection section layout */
+.model-selection-section {
+  animation: slideInLeft 0.6s ease-out;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
