@@ -6,7 +6,13 @@ import os
 import uuid
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./text_classification.db")
+# Create data directory if it doesn't exist
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Set database path to data directory
+DB_PATH = os.path.join(DATA_DIR, "text_classification.db")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
 
 # Create engine
 engine = create_engine(

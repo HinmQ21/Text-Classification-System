@@ -5,6 +5,11 @@ from typing import List, Optional
 import uvicorn
 from datetime import datetime
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import our modules
 from models.database import init_db, get_db

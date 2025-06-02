@@ -7,6 +7,7 @@ from typing import Dict, Any, List
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from langdetect import detect, DetectorFactory
 import os
+import google.generativeai as genai
 
 # Set seed for consistent language detection
 DetectorFactory.seed = 0
@@ -19,6 +20,24 @@ class TextClassifierService:
     def __init__(self):
         self.models = {}
         self.ready = False
+        self.gemini_model = None
+        self._initialize_gemini()
+        
+    def _initialize_gemini(self):
+        """Initialize Gemini API for translation"""
+        try:
+            api_key = os.getenv('GEMINI_API_KEY')
+            if not api_key:
+                logger.warning("GEMINI_API_KEY not found in environment variables. Translation will be disabled.")
+                return
+            
+            genai.configure(api_key=api_key)
+            self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-lite')
+            logger.info("Gemini API initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini API: {e}")
+            self.gemini_model = None
         
     async def initialize(self):
         """Initialize pre-trained models"""
@@ -176,6 +195,54 @@ class TextClassifierService:
                 "processing_time": processing_time
             }
     
+    async def _translate_to_english(self, text: str, source_language: str) -> str:
+        """
+        Translate text to English using Gemini API
+        
+        Args:
+            text: Text to translate
+            source_language: Source language code
+            
+        Returns:
+            Translated text in English
+        """
+        if not self.gemini_model:
+            logger.warning("Gemini API not available. Returning original text.")
+            return text
+        
+        if source_language == "en" or source_language == "unknown":
+            return text
+        
+        try:
+            # Create translation prompt
+            prompt = f"""
+You are a professional translator.
+
+Your task:
+1. Translate the input text into English.
+2. If the provided source language '{source_language}' does NOT match the actual language of the input, automatically detect the correct language and translate accordingly.
+3. Return ONLY the translated version of the input text, with no explanations, notes, or formatting.
+4. Keep the output as a single text block that mirrors the structure of the input.
+
+Input text:
+{text}
+"""
+            
+            response = self.gemini_model.generate_content(prompt)
+            translated_text = response.text.strip()
+            
+            # Validate translation
+            if translated_text and len(translated_text) > 0:
+                logger.info(f"Successfully translated text from {source_language} to English")
+                return translated_text
+            else:
+                logger.warning("Gemini returned empty translation. Using original text.")
+                return text
+                
+        except Exception as e:
+            logger.error(f"Translation error: {e}")
+            return text
+    
     async def _preprocess_text(self, text: str, language: str = None) -> str:
         """
         Advanced text preprocessing for real-world applications
@@ -199,12 +266,13 @@ class TextClassifierService:
                 language = self._detect_language(processed_text)
                 logger.info(f"Auto-detected language: {language}")
             
-            # Step 3: Final normalization
-            processed_text = self._normalize_text(processed_text)
-            
-            # Note: Translation will be handled separately by Gemini API
+            # Step 3: Translate to English if needed
             if language != "en" and language != "unknown":
-                logger.info(f"Text is in {language}, translation will be handled by Gemini API")
+                logger.info(f"Translating text from {language} to English...")
+                processed_text = await self._translate_to_english(processed_text, language)
+            
+            # Step 4: Final normalization
+            processed_text = self._normalize_text(processed_text)
             
             return processed_text
             
