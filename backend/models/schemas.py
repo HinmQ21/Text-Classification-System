@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, EmailStr
 from typing import List, Optional, Literal, Union, Dict
 from datetime import datetime
 import uuid
@@ -179,3 +179,71 @@ class BatchProcessingStatus(BaseModel):
     estimated_time_remaining: Optional[float] = None
     current_batch: int
     total_batches: int
+
+# Authentication Schemas
+class UserCreate(BaseModel):
+    """Schema for user registration"""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., min_length=6, max_length=100, description="User password")
+    full_name: Optional[str] = Field(None, max_length=255, description="User full name")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "password": "securepassword123",
+                "full_name": "John Doe"
+            }
+        }
+
+class UserLogin(BaseModel):
+    """Schema for user login"""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "password": "securepassword123"
+            }
+        }
+
+class UserResponse(BaseModel):
+    """Schema for user response"""
+    id: int
+    email: str
+    full_name: Optional[str]
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    """Schema for authentication token"""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+class QueryHistoryItem(BaseModel):
+    """Schema for individual query history item"""
+    id: int
+    text: str
+    model_type: str
+    prediction: str
+    confidence: float
+    language: str
+    processing_time: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class QueryHistoryResponse(BaseModel):
+    """Schema for query history response"""
+    total_count: int
+    items: List[QueryHistoryItem]
+    page: int
+    page_size: int
+    total_pages: int

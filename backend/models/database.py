@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from datetime import datetime
@@ -31,6 +31,7 @@ class ClassificationResult(Base):
     __tablename__ = "classification_results"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional for anonymous users
     text = Column(Text, nullable=False)
     model_type = Column(String(50), nullable=False)
     prediction = Column(String(100), nullable=False)
@@ -39,11 +40,15 @@ class ClassificationResult(Base):
     processing_time = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Relationship to user
+    user = relationship("User", back_populates="classification_results")
+
 class CSVProcessingJob(Base):
     """Database model for storing CSV processing job information"""
     __tablename__ = "csv_processing_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional for anonymous users
     job_id = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     model_type = Column(String(50), nullable=False)
     batch_size = Column(Integer, nullable=False)
@@ -57,7 +62,8 @@ class CSVProcessingJob(Base):
     processing_time = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
 
-    # Relationship to CSV results
+    # Relationships
+    user = relationship("User", back_populates="csv_jobs")
     csv_results = relationship("CSVResult", back_populates="job", cascade="all, delete-orphan")
 
 class CSVResult(Base):
@@ -79,12 +85,19 @@ class CSVResult(Base):
     job = relationship("CSVProcessingJob", back_populates="csv_results")
 
 class User(Base):
-    """Database model for users (for future use)"""
+    """Database model for users"""
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(255), unique=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    classification_results = relationship("ClassificationResult", back_populates="user")
+    csv_jobs = relationship("CSVProcessingJob", back_populates="user")
 
 def init_db():
     """Initialize database tables"""
@@ -105,10 +118,12 @@ def save_classification_result(
     prediction: str,
     confidence: float,
     language: str,
-    processing_time: float
+    processing_time: float,
+    user_id: int = None
 ) -> ClassificationResult:
     """Save classification result to database"""
     result = ClassificationResult(
+        user_id=user_id,
         text=text,
         model_type=model_type,
         prediction=prediction,

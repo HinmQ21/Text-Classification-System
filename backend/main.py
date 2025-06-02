@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -7,19 +7,25 @@ from datetime import datetime
 import logging
 import os
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+import math
 
 # Load environment variables
 load_dotenv()
 
 # Import our modules
-from models.database import init_db, get_db
+from models.database import init_db, get_db, User, ClassificationResult
 from models.schemas import (
     TextClassificationRequest, TextClassificationResponse, BatchRequest,
-    CSVUploadRequest, CSVBatchResponse, BatchProcessingStatus
+    CSVUploadRequest, CSVBatchResponse, BatchProcessingStatus,
+    UserCreate, UserLogin, Token, UserResponse, QueryHistoryResponse, QueryHistoryItem
 )
 from services.text_classifier import TextClassifierService
 from services.language_detector import LanguageDetectorService
 from services.csv_processor import CSVProcessorService
+from services.auth_service import auth_service
+from services.auth_dependencies import get_current_user_optional, get_current_user_required
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -79,16 +85,18 @@ async def health_check():
 @app.post("/classify", response_model=TextClassificationResponse)
 async def classify_text(
     request: TextClassificationRequest,
-    db = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
     Classify a single text input
     Supports: sentiment, spam, topic classification
+    Works for both authenticated and anonymous users
     """
     try:
         # Detect language
         detected_language = language_detector.detect(request.text)
-        
+
         # Classify text with temperature parameter and model selection
         result = await text_classifier.classify(
             text=request.text,
@@ -97,10 +105,21 @@ async def classify_text(
             temperature=request.temperature,
             model_selection=request.model_selection
         )
-        
-        # Save to database (optional for demo)
-        # save_classification_result(db, request, result)
-        
+
+        # Save result to database if user is authenticated
+        if current_user:
+            from models.database import save_classification_result
+            save_classification_result(
+                db=db,
+                text=request.text,
+                model_type=request.model_type,
+                prediction=result["prediction"],
+                confidence=result["confidence"],
+                language=detected_language,
+                processing_time=result.get("processing_time", 0),
+                user_id=current_user.id
+            )
+
         return TextClassificationResponse(
             text=request.text,
             model_type=request.model_type,
@@ -115,7 +134,7 @@ async def classify_text(
             models_used=result.get("models_used", []),
             individual_results=result.get("individual_results")
         )
-        
+
     except Exception as e:
         logger.error(f"Classification error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
@@ -286,6 +305,138 @@ async def get_csv_processing_results(
     except Exception as e:
         logger.error(f"Error getting job results: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get job results: {str(e)}")
+
+# Authentication endpoints
+@app.post("/auth/register", response_model=Token)
+async def register_user(
+    user_create: UserCreate,
+    db: Session = Depends(get_db)
+):
+    """Register a new user"""
+    try:
+        user = auth_service.create_user(db, user_create)
+        token_data = auth_service.login_user(db, UserLogin(email=user.email, password=user_create.password))
+        return Token(**token_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Registration failed")
+
+@app.post("/auth/login", response_model=Token)
+async def login_user(
+    user_login: UserLogin,
+    db: Session = Depends(get_db)
+):
+    """Login user and return access token"""
+    try:
+        token_data = auth_service.login_user(db, user_login)
+        return Token(**token_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user_required)
+):
+    """Get current user information"""
+    return UserResponse.from_orm(current_user)
+
+@app.get("/history", response_model=QueryHistoryResponse)
+async def get_user_query_history(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """Get user's query history with pagination"""
+    try:
+        # Calculate offset
+        offset = (page - 1) * page_size
+
+        # Get total count
+        total_count = db.query(ClassificationResult).filter(
+            ClassificationResult.user_id == current_user.id
+        ).count()
+
+        # Get paginated results
+        results = db.query(ClassificationResult).filter(
+            ClassificationResult.user_id == current_user.id
+        ).order_by(desc(ClassificationResult.created_at)).offset(offset).limit(page_size).all()
+
+        # Convert to response format
+        items = [QueryHistoryItem.from_orm(result) for result in results]
+
+        # Calculate total pages
+        total_pages = math.ceil(total_count / page_size)
+
+        return QueryHistoryResponse(
+            total_count=total_count,
+            items=items,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting query history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get query history")
+
+@app.delete("/history/{item_id}")
+async def delete_query_history_item(
+    item_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """Delete a specific query history item"""
+    try:
+        # Find the item and verify ownership
+        item = db.query(ClassificationResult).filter(
+            ClassificationResult.id == item_id,
+            ClassificationResult.user_id == current_user.id
+        ).first()
+
+        if not item:
+            raise HTTPException(status_code=404, detail="Query history item not found")
+
+        # Delete the item
+        db.delete(item)
+        db.commit()
+
+        return {"message": "Query history item deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting query history item: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete query history item")
+
+@app.delete("/history")
+async def delete_all_query_history(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """Delete all query history for the current user"""
+    try:
+        # Delete all classification results for the user
+        deleted_count = db.query(ClassificationResult).filter(
+            ClassificationResult.user_id == current_user.id
+        ).delete()
+
+        db.commit()
+
+        return {
+            "message": f"All query history deleted successfully",
+            "deleted_count": deleted_count
+        }
+
+    except Exception as e:
+        logger.error(f"Error deleting all query history: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete query history")
 
 if __name__ == "__main__":
     uvicorn.run(

@@ -11,6 +11,9 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { AuthProvider, useAuth } from './AuthContext';
+import { LoginForm, RegisterForm, UserMenu } from './AuthComponents';
+import { QueryHistory } from './QueryHistory';
 
 ChartJS.register(
   CategoryScale,
@@ -92,7 +95,9 @@ interface AvailableModelsResponse {
   available_models: AvailableModel[];
 }
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { user } = useAuth();
+
   // Single text classification state
   const [text, setText] = useState('');
   const [modelType, setModelType] = useState<'sentiment' | 'spam' | 'topic'>('sentiment');
@@ -102,6 +107,11 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
+
+  // Authentication modal state
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   // Model selection state
   const [availableModels, setAvailableModels] = useState<AvailableModelsResponse | null>(null);
@@ -507,15 +517,40 @@ const App: React.FC = () => {
     <div className="App">
       <div className="container">
         <header className="header">
-          <h1>🤖 Text Classification Demo</h1>
-          <p>Analyze text sentiment, detect spam, and classify topics with AI</p>
-          
-          {apiStatus && (
-            <div className={`status ${apiStatus.status === 'healthy' ? 'success' : 'error'}`}>
-              API Status: {apiStatus.status} 
-              {apiStatus.status === 'healthy' && ' ✅'}
+          <div className="header-content">
+            <div className="header-main">
+              <h1>🤖 Text Classification Demo</h1>
+              <p>Analyze text sentiment, detect spam, and classify topics with AI</p>
+
+              {apiStatus && (
+                <div className={`status ${apiStatus.status === 'healthy' ? 'success' : 'error'}`}>
+                  API Status: {apiStatus.status}
+                  {apiStatus.status === 'healthy' && ' ✅'}
+                </div>
+              )}
             </div>
-          )}
+
+            <div className="header-auth">
+              {user ? (
+                <UserMenu onShowHistory={() => setShowHistoryModal(true)} />
+              ) : (
+                <div className="auth-buttons">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setShowLoginModal(true)}
+                  >
+                    Login
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setShowRegisterModal(true)}
+                  >
+                    Register
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </header>
 
         {/* Tab Navigation */}
@@ -1153,11 +1188,46 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Authentication Modals */}
+        {showLoginModal && (
+          <LoginForm
+            onClose={() => setShowLoginModal(false)}
+            onSwitchToRegister={() => {
+              setShowLoginModal(false);
+              setShowRegisterModal(true);
+            }}
+          />
+        )}
+
+        {showRegisterModal && (
+          <RegisterForm
+            onClose={() => setShowRegisterModal(false)}
+            onSwitchToLogin={() => {
+              setShowRegisterModal(false);
+              setShowLoginModal(true);
+            }}
+          />
+        )}
+
+        {/* Query History Modal */}
+        {showHistoryModal && (
+          <QueryHistory onClose={() => setShowHistoryModal(false)} />
+        )}
+
         <footer className="footer">
           <p>🚀 Text Classification System Demo - Built with React & FastAPI</p>
         </footer>
       </div>
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 
