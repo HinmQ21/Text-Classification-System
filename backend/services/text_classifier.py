@@ -68,7 +68,7 @@ class TextClassifierService:
         Apply softmax with temperature scaling
         
         Args:
-            logits: Raw prediction scores
+            logits: Raw prediction scores (logits, not probabilities)
             temperature: Temperature parameter (0.5-2.0)
                         - Lower values (< 1.0) make the model more confident
                         - Higher values (> 1.0) make the model less confident
@@ -90,6 +90,39 @@ class TextClassifierService:
         probabilities = exp_logits / np.sum(exp_logits)
         
         return probabilities.tolist()
+    
+    def _probabilities_to_logits_with_temperature(self, probabilities: List[float], temperature: float = 1.0) -> List[float]:
+        """
+        Convert probabilities to logits and apply temperature scaling
+        
+        Args:
+            probabilities: Probability distribution from model output
+            temperature: Temperature parameter (0.5-2.0)
+                        
+        Returns:
+            New probability distribution after temperature scaling
+        """
+        if temperature <= 0:
+            temperature = 1.0
+            
+        # Convert to numpy array
+        probs_array = np.array(probabilities, dtype=np.float64)
+        
+        # Add small epsilon to avoid log(0)
+        epsilon = 1e-8
+        probs_array = np.clip(probs_array, epsilon, 1.0 - epsilon)
+        
+        # Convert probabilities to logits
+        logits = np.log(probs_array)
+        
+        # Apply temperature scaling
+        scaled_logits = logits / temperature
+        
+        # Apply softmax
+        exp_logits = np.exp(scaled_logits - np.max(scaled_logits))
+        new_probabilities = exp_logits / np.sum(exp_logits)
+        
+        return new_probabilities.tolist()
         
     async def classify(self, text: str, model_type: str, language: str = None, temperature: float = 1.0) -> Dict[str, Any]:
         """
@@ -282,10 +315,10 @@ class TextClassifierService:
             # Extract all scores and apply temperature
             all_scores = results[0]  # List of {'label': str, 'score': float}
             labels = [item['label'].lower() for item in all_scores]
-            raw_scores = [item['score'] for item in all_scores]
+            probabilities = [item['score'] for item in all_scores]  # These are already probabilities
             
-            # Apply temperature scaling
-            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            # Apply temperature scaling (convert probabilities to logits first)
+            temp_scores = self._probabilities_to_logits_with_temperature(probabilities, temperature)
             
             # Create score dictionary
             score_dict = dict(zip(labels, temp_scores))
@@ -306,18 +339,18 @@ class TextClassifierService:
             all_scores = results[0]
             
             # Map labels to more readable format
-            mapped_scores = []
+            mapped_probabilities = []
             mapped_labels = []
             for item in all_scores:
                 if item['label'] == "LABEL_1":
                     mapped_labels.append("spam")
-                    mapped_scores.append(item['score'])
+                    mapped_probabilities.append(item['score'])  # These are probabilities
                 else:
                     mapped_labels.append("not_spam")
-                    mapped_scores.append(item['score'])
+                    mapped_probabilities.append(item['score'])  # These are probabilities
             
-            # Apply temperature scaling
-            temp_scores = self._softmax_with_temperature(mapped_scores, temperature)
+            # Apply temperature scaling (convert probabilities to logits first)
+            temp_scores = self._probabilities_to_logits_with_temperature(mapped_probabilities, temperature)
             
             # Create score dictionary
             score_dict = dict(zip(mapped_labels, temp_scores))
@@ -341,9 +374,9 @@ class TextClassifierService:
             ]
             result = model(text, candidate_labels)
             
-            # Apply temperature scaling to the scores
-            raw_scores = result['scores']
-            temp_scores = self._softmax_with_temperature(raw_scores, temperature)
+            # Apply temperature scaling to the scores (these are probabilities)
+            probabilities = result['scores']
+            temp_scores = self._probabilities_to_logits_with_temperature(probabilities, temperature)
             
             # Create score dictionary
             score_dict = dict(zip(result['labels'], temp_scores))

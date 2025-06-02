@@ -476,7 +476,7 @@ const App: React.FC = () => {
                       <span className="model-emoji">😊</span>
                       <div className="model-text">
                         <span className="model-name">Sentiment</span>
-                        <span className="model-description">Positive/Negative</span>
+                        <span className="model-description">Positive/Negative/Neutral</span>
                       </div>
                     </label>
                   </div>
