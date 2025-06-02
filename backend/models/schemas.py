@@ -8,13 +8,15 @@ class TextClassificationRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=10000, description="Text to classify")
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
     temperature: float = Field(default=1.0, ge=0.5, le=2.0, description="Temperature for softmax scaling (0.5-2.0)")
+    model_selection: Union[str, List[str]] = Field(default="all", description="Which models to use: 'all', single model key, or list of model keys")
     
     class Config:
-        schema_extra = {
+        json_json_schema_extra = {
             "example": {
                 "text": "I love this product! It's amazing!",
                 "model_type": "sentiment",
-                "temperature": 1.0
+                "temperature": 1.0,
+                "model_selection": "all"
             }
         }
 
@@ -29,9 +31,12 @@ class TextClassificationResponse(BaseModel):
     language: str
     processing_time: float
     timestamp: datetime
+    is_ensemble: bool = Field(..., description="Whether result is from ensemble of multiple models")
+    models_used: List[str] = Field(..., description="List of model keys used for classification")
+    individual_results: Optional[Dict[str, Dict]] = Field(None, description="Individual results from each model (if ensemble)")
     
     class Config:
-        schema_extra = {
+        json_json_schema_extra = {
             "example": {
                 "text": "I love this product!",
                 "model_type": "sentiment",
@@ -45,7 +50,10 @@ class TextClassificationResponse(BaseModel):
                 "temperature": 1.0,
                 "language": "en",
                 "processing_time": 0.123,
-                "timestamp": "2024-01-01T12:00:00"
+                "timestamp": "2024-01-01T12:00:00",
+                "is_ensemble": "false",
+                "models_used": ["twitter-roberta"],
+                "individual_results": "null"
             }
         }
 
@@ -54,9 +62,10 @@ class BatchRequest(BaseModel):
     texts: List[str] = Field(..., min_items=1, max_items=100, description="List of texts to classify")
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
     temperature: float = Field(default=1.0, ge=0.5, le=2.0, description="Temperature for softmax scaling (0.5-2.0)")
+    model_selection: Union[str, List[str]] = Field(default="all", description="Which models to use: 'all', single model key, or list of model keys")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "texts": [
                     "I love this product!",
@@ -64,7 +73,8 @@ class BatchRequest(BaseModel):
                     "It's okay, nothing special"
                 ],
                 "model_type": "sentiment",
-                "temperature": 1.0
+                "temperature": 1.0,
+                "model_selection": "all"
             }
         }
 
@@ -86,6 +96,7 @@ class ModelInfo(BaseModel):
     name: str
     description: str
     languages: List[str]
+    available_models: Dict[str, str] = Field(..., description="Available model variants with display names")
 
 class ModelsResponse(BaseModel):
     """Available models response"""
@@ -96,6 +107,7 @@ class CSVUploadRequest(BaseModel):
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
     batch_size: int = Field(default=16, description="Number of texts to process in each batch")
     text_column: str = Field(default="text", description="Name of the column containing text to classify")
+    model_selection: Union[str, List[str]] = Field(default="all", description="Which models to use: 'all', single model key, or list of model keys")
 
     @validator('batch_size')
     def validate_batch_size(cls, v):
@@ -105,11 +117,12 @@ class CSVUploadRequest(BaseModel):
         return v
 
     class Config:
-        schema_extra = {
+        json_json_schema_extra = {
             "example": {
                 "model_type": "sentiment",
                 "batch_size": 16,
-                "text_column": "text"
+                "text_column": "text",
+                "model_selection": "all"
             }
         }
 
@@ -139,7 +152,7 @@ class CSVBatchResponse(BaseModel):
     processing_time: Optional[float] = None
 
     class Config:
-        schema_extra = {
+        json_json_schema_extra = {
             "example": {
                 "job_id": "550e8400-e29b-41d4-a716-446655440000",
                 "status": "completed",

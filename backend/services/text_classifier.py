@@ -3,7 +3,7 @@ import logging
 import re
 import unicodedata
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Union
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from langdetect import detect, DetectorFactory
 import os
@@ -22,6 +22,46 @@ class TextClassifierService:
         self.ready = False
         self.gemini_model = None
         self._initialize_gemini()
+        
+        # Model configurations with display names
+        self.model_configs = {
+            "sentiment": {
+                "models": {
+                    "twitter-roberta": {
+                        "full_name": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+                        "display_name": "Roberta-base"
+                    },
+                    "twitter-roberta-xml": {
+                        "full_name": "cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual",
+                        "display_name": "XML-Roberta-base-multilingual"
+                    }
+                }
+            },
+            "spam": {
+                "models": {
+                    "roberta-sms": {
+                        "full_name": "mariagrandury/roberta-base-finetuned-sms-spam-detection",
+                        "display_name": "Roberta-base"
+                    },
+                    "distilbert-sms": {
+                        "full_name": "mariagrandury/distilbert-base-uncased-finetuned-sms-spam-detection",
+                        "display_name": "Distilbert-base"
+                    }
+                }
+            },
+            "topic": {
+                "models": {
+                    "bart-mnli": {
+                        "full_name": "facebook/bart-large-mnli",
+                        "display_name": "Bart-large"
+                    },
+                    "deberta-nli": {
+                        "full_name": "tasksource/deberta-small-long-nli",
+                        "display_name": "Deberta-small"
+                    }
+                }
+            }
+        }
         
     def _initialize_gemini(self):
         """Initialize Gemini API for translation"""
@@ -44,34 +84,62 @@ class TextClassifierService:
         try:
             logger.info("Initializing text classification models...")
             
-            # Initialize sentiment analysis model
-            self.models["sentiment"] = pipeline(
-                "sentiment-analysis",
-                model="cardiffnlp/twitter-roberta-base-sentiment-latest",
-                return_all_scores=True
-            )
+            # Initialize sentiment analysis models
+            self.models["sentiment"] = {}
+            for model_key, model_info in self.model_configs["sentiment"]["models"].items():
+                try:
+                    self.models["sentiment"][model_key] = pipeline(
+                        "sentiment-analysis",
+                        model=model_info["full_name"],
+                        return_all_scores=True
+                    )
+                    logger.info(f"Initialized sentiment model: {model_info['display_name']}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize sentiment model {model_key}: {e}")
             
-            # Initialize spam detection model (using a general classification model)
-            self.models["spam"] = pipeline(
-                "text-classification",
-                model="mariagrandury/roberta-base-finetuned-sms-spam-detection",
-                return_all_scores=True
-            )
+            # Initialize spam detection models
+            self.models["spam"] = {}
+            for model_key, model_info in self.model_configs["spam"]["models"].items():
+                try:
+                    self.models["spam"][model_key] = pipeline(
+                        "text-classification",
+                        model=model_info["full_name"],
+                        return_all_scores=True
+                    )
+                    logger.info(f"Initialized spam model: {model_info['display_name']}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize spam model {model_key}: {e}")
             
-            # Initialize topic classification model
-            self.models["topic"] = pipeline(
-                "zero-shot-classification",
-                model="facebook/bart-large-mnli"
-            )
+            # Initialize topic classification models
+            self.models["topic"] = {}
+            for model_key, model_info in self.model_configs["topic"]["models"].items():
+                try:
+                    self.models["topic"][model_key] = pipeline(
+                        "zero-shot-classification",
+                        model=model_info["full_name"]
+                    )
+                    logger.info(f"Initialized topic model: {model_info['display_name']}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize topic model {model_key}: {e}")
             
             self.ready = True
             logger.info("All models initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize models: {e}")
-            # Remove fallback initialization since it's not needed
             raise e
     
+    def get_available_models(self) -> Dict[str, Any]:
+        """Get available model configurations"""
+        available = {}
+        for task_type, config in self.model_configs.items():
+            available[task_type] = {}
+            for model_key, model_info in config["models"].items():
+                # Check if model is actually loaded
+                if task_type in self.models and model_key in self.models[task_type]:
+                    available[task_type][model_key] = model_info["display_name"]
+        return available
+
     def _softmax_with_temperature(self, logits: List[float], temperature: float = 1.0) -> List[float]:
         """
         Apply softmax with temperature scaling
@@ -132,16 +200,60 @@ class TextClassifierService:
         new_probabilities = exp_logits / np.sum(exp_logits)
         
         return new_probabilities.tolist()
-        
-    async def classify(self, text: str, model_type: str, language: str = None, temperature: float = 1.0) -> Dict[str, Any]:
+    
+    def _ensemble_predictions(self, predictions: List[Dict[str, Any]], ensemble_method: str = "average") -> Dict[str, Any]:
         """
-        Classify text using specified model
+        Combine predictions from multiple models using ensemble methods
+        
+        Args:
+            predictions: List of prediction dictionaries from individual models
+            ensemble_method: Method for combining predictions ("average", "weighted", "voting")
+            
+        Returns:
+            Combined prediction dictionary
+        """
+        if not predictions:
+            raise ValueError("No predictions to ensemble")
+        
+        if len(predictions) == 1:
+            return predictions[0]
+        
+        if ensemble_method == "average":
+            # Average the probability scores
+            all_labels = set()
+            for pred in predictions:
+                all_labels.update(pred["all_scores"].keys())
+            
+            combined_scores = {}
+            for label in all_labels:
+                scores = [pred["all_scores"].get(label, 0.0) for pred in predictions]
+                combined_scores[label] = np.mean(scores)
+            
+            # Find the best prediction
+            best_label = max(combined_scores.items(), key=lambda x: x[1])
+            
+            return {
+                "label": best_label[0],
+                "confidence": best_label[1],
+                "all_scores": combined_scores
+            }
+        
+        # Add other ensemble methods if needed
+        else:
+            logger.warning(f"Ensemble method '{ensemble_method}' not implemented, using average")
+            return self._ensemble_predictions(predictions, "average")
+        
+    async def classify(self, text: str, model_type: str, language: str = None, temperature: float = 1.0, 
+                      model_selection: Union[str, List[str]] = "all") -> Dict[str, Any]:
+        """
+        Classify text using specified model(s)
         
         Args:
             text: Input text to classify
             model_type: Type of classification (sentiment, spam, topic)
             language: Language of the text (if None, will auto-detect)
             temperature: Temperature for softmax scaling (0.5-2.0)
+            model_selection: Which models to use ("all", single model key, or list of model keys)
             
         Returns:
             Dictionary with prediction, confidence, all scores, and processing time
@@ -158,18 +270,64 @@ class TextClassifierService:
             # Advanced text preprocessing with language detection and translation
             processed_text = await self._preprocess_text(text, language)
             
-            # Perform classification
-            result = await self._model_classify(processed_text, model_type, temperature)
+            # Determine which models to use
+            available_models = list(self.models[model_type].keys())
+            if not available_models:
+                raise ValueError(f"No models available for type '{model_type}'")
+            
+            if model_selection == "all":
+                selected_models = available_models
+            elif isinstance(model_selection, str):
+                if model_selection in available_models:
+                    selected_models = [model_selection]
+                else:
+                    raise ValueError(f"Model '{model_selection}' not available for type '{model_type}'")
+            elif isinstance(model_selection, list):
+                selected_models = [m for m in model_selection if m in available_models]
+                if not selected_models:
+                    raise ValueError(f"None of the specified models are available for type '{model_type}'")
+            else:
+                selected_models = available_models
+            
+            # Perform classification with selected models
+            predictions = []
+            model_results = {}
+            
+            for model_key in selected_models:
+                try:
+                    result = await self._model_classify(processed_text, model_type, model_key, temperature)
+                    predictions.append(result)
+                    model_results[model_key] = result
+                    logger.info(f"Successfully classified with model {model_key}")
+                except Exception as e:
+                    logger.error(f"Error with model {model_key}: {e}")
+                    continue
+            
+            if not predictions:
+                raise ValueError("All models failed to classify the text")
+            
+            # Combine predictions if multiple models were used
+            if len(predictions) > 1:
+                final_result = self._ensemble_predictions(predictions, "average")
+                is_ensemble = True
+            else:
+                final_result = predictions[0]
+                is_ensemble = False
             
             processing_time = time.time() - start_time
             
-            return {
-                "prediction": result["label"],
-                "confidence": result["confidence"],
-                "all_scores": result["all_scores"],
+            response = {
+                "prediction": final_result["label"],
+                "confidence": final_result["confidence"],
+                "all_scores": final_result["all_scores"],
                 "temperature": temperature,
-                "processing_time": processing_time
+                "processing_time": processing_time,
+                "is_ensemble": is_ensemble,
+                "models_used": selected_models,
+                "individual_results": model_results if len(predictions) > 1 else None
             }
+            
+            return response
             
         except Exception as e:
             logger.error(f"Classification error: {e}")
@@ -177,9 +335,12 @@ class TextClassifierService:
             return {
                 "prediction": "unknown",
                 "confidence": 0.0,
-                "all_scores": [],
+                "all_scores": {},
                 "temperature": temperature,
-                "processing_time": processing_time
+                "processing_time": processing_time,
+                "is_ensemble": False,
+                "models_used": [],
+                "individual_results": None
             }
     
     async def _translate_to_english(self, text: str, source_language: str) -> str:
@@ -361,9 +522,9 @@ Input text:
         
         return text
     
-    async def _model_classify(self, text: str, model_type: str, temperature: float = 1.0) -> Dict[str, Any]:
+    async def _model_classify(self, text: str, model_type: str, model_key: str, temperature: float = 1.0) -> Dict[str, Any]:
         """Classify using actual ML models"""
-        model = self.models[model_type]
+        model = self.models[model_type][model_key]
         
         if model_type == "sentiment":
             results = model(text)

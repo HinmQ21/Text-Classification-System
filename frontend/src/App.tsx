@@ -31,6 +31,9 @@ interface ClassificationResult {
   language: string;
   processing_time: number;
   timestamp: string;
+  is_ensemble: boolean;
+  models_used: string[];
+  individual_results?: { [key: string]: any };
 }
 
 interface ApiStatus {
@@ -78,6 +81,17 @@ interface BatchProcessingStatus {
   total_batches: number;
 }
 
+interface AvailableModel {
+  name: string;
+  description: string;
+  languages: string[];
+  available_models: { [key: string]: string };
+}
+
+interface AvailableModelsResponse {
+  available_models: AvailableModel[];
+}
+
 const App: React.FC = () => {
   // Single text classification state
   const [text, setText] = useState('');
@@ -88,6 +102,14 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
+
+  // Model selection state
+  const [availableModels, setAvailableModels] = useState<AvailableModelsResponse | null>(null);
+  const [selectedModels, setSelectedModels] = useState<{ [key: string]: string[] }>({
+    sentiment: [],
+    spam: [],
+    topic: []
+  });
 
   // Chart modal state
   const [showChartModal, setShowChartModal] = useState(false);
@@ -105,9 +127,10 @@ const App: React.FC = () => {
   // Available batch sizes
   const availableBatchSizes = [1, 4, 8, 16, 64, 128, 256];
 
-  // Check API health on component mount
+  // Check API health and load available models on component mount
   useEffect(() => {
     checkApiHealth();
+    loadAvailableModels();
   }, []);
 
   // Handle ESC key to close modal
@@ -139,6 +162,53 @@ const App: React.FC = () => {
     }
   };
 
+  const loadAvailableModels = async () => {
+    try {
+      const response = await axios.get('/models');
+      setAvailableModels(response.data);
+    } catch (err) {
+      console.error('Failed to load available models:', err);
+    }
+  };
+
+  const handleModelSelection = (taskType: string, modelKey: string) => {
+    setSelectedModels(prev => {
+      const currentSelection = prev[taskType] || [];
+      
+      if (modelKey === 'all') {
+        // If "all" is selected, select all available models
+        const availableModelKeys = Object.keys(availableModels?.available_models.find(m => m.name === taskType)?.available_models || {});
+        if (currentSelection.length === availableModelKeys.length) {
+          return { ...prev, [taskType]: [] }; // Deselect all
+        } else {
+          return { ...prev, [taskType]: availableModelKeys }; // Select all
+        }
+      } else {
+        // Individual model selection
+        let newSelection = [...currentSelection];
+        
+        if (newSelection.includes(modelKey)) {
+          newSelection = newSelection.filter(m => m !== modelKey); // Deselect model
+        } else {
+          newSelection.push(modelKey); // Select model
+        }
+        
+        return { ...prev, [taskType]: newSelection };
+      }
+    });
+  };
+
+  const getModelSelectionForRequest = (taskType: string): string | string[] => {
+    const selection = selectedModels[taskType] || [];
+    if (selection.length === 0) {
+      return 'all'; // Default to all if nothing selected
+    } else if (selection.length === 1) {
+      return selection[0]; // Single model
+    } else {
+      return selection; // Multiple models (ensemble)
+    }
+  };
+
   const handleClassify = async () => {
     if (!text.trim()) {
       setError('Please enter some text to classify');
@@ -153,7 +223,8 @@ const App: React.FC = () => {
       const response = await axios.post('/classify', {
         text: text.trim(),
         model_type: modelType,
-        temperature: temperature
+        temperature: temperature,
+        model_selection: getModelSelectionForRequest(modelType)
       });
 
       setResult(response.data);
@@ -181,6 +252,13 @@ const App: React.FC = () => {
       formData.append('model_type', modelType);
       formData.append('batch_size', batchSize.toString());
       formData.append('text_column', textColumn);
+      
+      const modelSelection = getModelSelectionForRequest(modelType);
+      if (typeof modelSelection === 'string') {
+        formData.append('model_selection', modelSelection);
+      } else {
+        formData.append('model_selection', modelSelection.join(','));
+      }
 
       const response = await axios.post('/classify/csv', formData, {
         headers: {
@@ -456,7 +534,7 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Model Selection and Temperature Control */}
+        {/* Model Selection and Model Variants */}
         <div className="card">
           <div className="model-config-container">
             <div className="model-selection-section">
@@ -520,60 +598,139 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="temperature-control">
-              <div className="input-group">
-                <label htmlFor="temperature-slider">
-                  🌡️ Temperature Control
-                </label>
-                <div className="temperature-info">
-                  <small>Controls prediction confidence: Lower = more confident, Higher = less confident</small>
-                </div>
-                
-                <div className="temperature-input-section">
-                  <div className="temperature-value-input">
-                    <label htmlFor="temperature-input">Value:</label>
-                    <input
-                      type="number"
-                      id="temperature-input"
-                      min="0.5"
-                      max="2.0"
-                      step="0.01"
-                      value={temperatureInput}
-                      onChange={handleTemperatureInputChange}
-                      onBlur={handleTemperatureInputBlur}
-                      onKeyPress={handleTemperatureInputKeyPress}
-                      className="temperature-number-input"
-                      placeholder="0.50 - 2.00"
-                    />
+            {/* Model Variant Selection */}
+            {availableModels && (
+              <div className="model-variant-selection">
+                <div className="input-group">
+                  <label>Choose Model Variants:</label>
+                  <div className="model-variant-info">
+                    <small>Select one or more models. Multiple selections will automatically use ensemble voting.</small>
                   </div>
-                  <div className="temperature-range">
-                    <span className="range-label">Range: 0.50 - 2.00</span>
-                  </div>
-                </div>
+                  {availableModels.available_models
+                    .filter(model => model.name === modelType)
+                    .map(model => (
+                      <div key={model.name} className="variant-selection-container">
+                        <div className="variant-options">
+                          {/* Select All option */}
+                          <div className="variant-option select-all-option">
+                            <input
+                              type="checkbox"
+                              id={`${model.name}-all`}
+                              checked={selectedModels[model.name]?.length === Object.keys(model.available_models).length}
+                              onChange={() => handleModelSelection(model.name, 'all')}
+                            />
+                            <label htmlFor={`${model.name}-all`} className="variant-label">
+                              <span className="variant-emoji">✅</span>
+                              <div className="variant-text">
+                                <span className="variant-name">Select All Models</span>
+                                <span className="variant-description">Choose all available models</span>
+                              </div>
+                            </label>
+                          </div>
 
-                <div className="slider-container">
-                  <span className="slider-label">0.5</span>
+                          {/* Individual model options */}
+                          {Object.entries(model.available_models).map(([modelKey, displayName]) => (
+                            <div key={modelKey} className="variant-option">
+                              <input
+                                type="checkbox"
+                                id={`${model.name}-${modelKey}`}
+                                checked={selectedModels[model.name]?.includes(modelKey) || false}
+                                onChange={() => handleModelSelection(model.name, modelKey)}
+                              />
+                              <label htmlFor={`${model.name}-${modelKey}`} className="variant-label">
+                                <span className="variant-emoji">🔧</span>
+                                <div className="variant-text">
+                                  <span className="variant-name">{displayName}</span>
+                                  <span className="variant-description">Individual model</span>
+                                </div>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Selection summary */}
+                        <div className="selection-summary">
+                          <small>
+                            {(() => {
+                              const selectionCount = selectedModels[model.name]?.length || 0;
+                              const totalModels = Object.keys(model.available_models).length;
+                              
+                              if (selectionCount === 0) {
+                                return '⚠️ No model selected (will use all models)';
+                              } else if (selectionCount === 1) {
+                                const selectedModel = selectedModels[model.name][0];
+                                return `🔧 Single model: ${model.available_models[selectedModel]}`;
+                              } else if (selectionCount === totalModels) {
+                                return `🤝 Ensemble: All ${totalModels} models combined`;
+                              } else {
+                                return `🤝 Ensemble: ${selectionCount} of ${totalModels} models combined`;
+                              }
+                            })()}
+                          </small>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Temperature Control */}
+        <div className="card">
+          <div className="temperature-control">
+            <div className="input-group">
+              <label htmlFor="temperature-slider">
+                🌡️ Temperature Control
+              </label>
+              <div className="temperature-info">
+                <small>Controls prediction confidence: Lower = more confident, Higher = less confident</small>
+              </div>
+              
+              <div className="temperature-input-section">
+                <div className="temperature-value-input">
+                  <label htmlFor="temperature-input">Value:</label>
                   <input
-                    type="range"
-                    id="temperature-slider"
+                    type="number"
+                    id="temperature-input"
                     min="0.5"
                     max="2.0"
-                    step="0.05"
-                    value={temperature}
-                    onChange={handleTemperatureSliderChange}
-                    className="temperature-slider"
+                    step="0.01"
+                    value={temperatureInput}
+                    onChange={handleTemperatureInputChange}
+                    onBlur={handleTemperatureInputBlur}
+                    onKeyPress={handleTemperatureInputKeyPress}
+                    className="temperature-number-input"
+                    placeholder="0.50 - 2.00"
                   />
-                  <span className="slider-label">2.0</span>
                 </div>
-                
-                <div className={`temperature-description ${
-                  temperature < 0.8 ? 'high-confidence' : 
-                  temperature <= 1.2 ? 'balanced' : 'exploratory'
-                }`}>
-                  {temperature < 0.8 && "🔥 High Confidence Mode"}
-                  {temperature >= 0.8 && temperature <= 1.2 && "⚖️ Balanced Mode"}
-                  {temperature > 1.2 && "🌈 Exploratory Mode"}
+                <div className="temperature-range">
+                  <span className="range-label">Range: 0.50 - 2.00</span>
                 </div>
+              </div>
+
+              <div className="slider-container">
+                <span className="slider-label">0.5</span>
+                <input
+                  type="range"
+                  id="temperature-slider"
+                  min="0.5"
+                  max="2.0"
+                  step="0.05"
+                  value={temperature}
+                  onChange={handleTemperatureSliderChange}
+                  className="temperature-slider"
+                />
+                <span className="slider-label">2.0</span>
+              </div>
+              
+              <div className={`temperature-description ${
+                temperature < 0.8 ? 'high-confidence' : 
+                temperature <= 1.2 ? 'balanced' : 'exploratory'
+              }`}>
+                {temperature < 0.8 && "🔥 High Confidence Mode"}
+                {temperature >= 0.8 && temperature <= 1.2 && "⚖️ Balanced Mode"}
+                {temperature > 1.2 && "🌈 Exploratory Mode"}
               </div>
             </div>
           </div>
@@ -628,6 +785,28 @@ const App: React.FC = () => {
 
                     <div className="result-item">
                       <strong>Model:</strong> {result.model_type}
+                    </div>
+
+                    {result.is_ensemble && (
+                      <div className="result-item ensemble-info">
+                        <strong>🤝 Ensemble:</strong> 
+                        <span className="ensemble-badge">
+                          {result.models_used.length} models combined
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="result-item">
+                      <strong>Models Used:</strong> 
+                      <div className="models-used">
+                        {result.models_used.map((modelKey, index) => (
+                          <span key={modelKey} className="model-tag">
+                            {availableModels?.available_models
+                              .find(m => m.name === result.model_type)
+                              ?.available_models[modelKey] || modelKey}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="result-item">

@@ -89,12 +89,13 @@ async def classify_text(
         # Detect language
         detected_language = language_detector.detect(request.text)
         
-        # Classify text with temperature parameter
+        # Classify text with temperature parameter and model selection
         result = await text_classifier.classify(
             text=request.text,
             model_type=request.model_type,
             language=detected_language,
-            temperature=request.temperature
+            temperature=request.temperature,
+            model_selection=request.model_selection
         )
         
         # Save to database (optional for demo)
@@ -109,7 +110,10 @@ async def classify_text(
             temperature=result["temperature"],
             language=detected_language,
             processing_time=result.get("processing_time", 0),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            is_ensemble=result.get("is_ensemble", False),
+            models_used=result.get("models_used", []),
+            individual_results=result.get("individual_results")
         )
         
     except Exception as e:
@@ -131,18 +135,22 @@ async def classify_batch(
             # Detect language
             detected_language = language_detector.detect(text)
             
-            # Classify text
+            # Classify text with model selection
             result = await text_classifier.classify(
                 text=text,
                 model_type=request.model_type,
-                language=detected_language
+                language=detected_language,
+                temperature=request.temperature,
+                model_selection=request.model_selection
             )
             
             results.append({
                 "text": text,
                 "prediction": result["prediction"],
                 "confidence": result["confidence"],
-                "language": detected_language
+                "language": detected_language,
+                "is_ensemble": result.get("is_ensemble", False),
+                "models_used": result.get("models_used", [])
             })
         
         return {
@@ -159,25 +167,38 @@ async def classify_batch(
 @app.get("/models")
 async def get_available_models():
     """Get list of available classification models"""
-    return {
-        "available_models": [
-            {
-                "name": "sentiment",
-                "description": "Sentiment Analysis (Positive/Negative/Neutral)",
-                "languages": ["en", "vi", "auto"]
-            },
-            {
-                "name": "spam",
-                "description": "Spam Detection (Spam/Not Spam)",
-                "languages": ["en", "auto"]
-            },
-            {
-                "name": "topic",
-                "description": "Topic Classification",
-                "languages": ["en", "auto"]
-            }
-        ]
-    }
+    try:
+        available_models = text_classifier.get_available_models()
+        
+        model_list = []
+        for model_type, models in available_models.items():
+            if model_type == "sentiment":
+                description = "Sentiment Analysis (Positive/Negative/Neutral)"
+                languages = ["en", "multilingual", "auto"]
+            elif model_type == "spam":
+                description = "Spam Detection (Spam/Not Spam)"
+                languages = ["en", "auto"]
+            elif model_type == "topic":
+                description = "Topic Classification"
+                languages = ["en", "auto"]
+            else:
+                description = f"{model_type.title()} Classification"
+                languages = ["en", "auto"]
+            
+            model_list.append({
+                "name": model_type,
+                "description": description,
+                "languages": languages,
+                "available_models": models
+            })
+        
+        return {
+            "available_models": model_list
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting available models: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get available models: {str(e)}")
 
 @app.post("/classify/csv")
 async def upload_csv_for_classification(
@@ -185,6 +206,7 @@ async def upload_csv_for_classification(
     model_type: str = Form(...),
     batch_size: int = Form(default=10),
     text_column: str = Form(default="text"),
+    model_selection: str = Form(default="all"),
     db = Depends(get_db)
 ):
     """
@@ -198,16 +220,22 @@ async def upload_csv_for_classification(
         # Read file content
         file_content = await file.read()
         file_content_str = file_content.decode('utf-8')
-
+        
         # Create request object
-        request = CSVUploadRequest(
+        # Parse model_selection (can be comma-separated string)
+        parsed_model_selection = model_selection
+        if model_selection != "all" and "," in model_selection:
+            parsed_model_selection = model_selection.split(",")
+        
+        csv_request = CSVUploadRequest(
             model_type=model_type,
             batch_size=batch_size,
-            text_column=text_column
+            text_column=text_column,
+            model_selection=parsed_model_selection
         )
 
         # Start processing
-        job_id = await csv_processor.start_csv_processing(file_content_str, request, db)
+        job_id = await csv_processor.start_csv_processing(file_content_str, csv_request, db)
 
         return {
             "job_id": job_id,

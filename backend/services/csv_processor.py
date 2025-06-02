@@ -164,7 +164,8 @@ class CSVProcessorService:
                         result = await self.text_classifier.classify(
                             text=text,
                             model_type=request.model_type,
-                            language=detected_language
+                            language=detected_language,
+                            model_selection=getattr(request, 'model_selection', 'all')
                         )
                         processing_time = time.time() - start_time
                         
