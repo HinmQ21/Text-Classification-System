@@ -1,8 +1,14 @@
 import time
 import logging
+import re
+import unicodedata
 from typing import Dict, Any
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-import torch
+from langdetect import detect, DetectorFactory
+import os
+
+# Set seed for consistent language detection
+DetectorFactory.seed = 0
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +62,14 @@ class TextClassifierService:
         }
         self.ready = True
         
-    async def classify(self, text: str, model_type: str, language: str = "en") -> Dict[str, Any]:
+    async def classify(self, text: str, model_type: str, language: str = None) -> Dict[str, Any]:
         """
         Classify text using specified model
         
         Args:
             text: Input text to classify
             model_type: Type of classification (sentiment, spam, topic)
-            language: Language of the text
+            language: Language of the text (if None, will auto-detect)
             
         Returns:
             Dictionary with prediction, confidence, and processing time
@@ -74,7 +80,7 @@ class TextClassifierService:
             if model_type not in self.models:
                 raise ValueError(f"Model type '{model_type}' not supported")
             
-            # Translate to English if needed (simplified for demo)
+            # Advanced text preprocessing with language detection and translation
             processed_text = await self._preprocess_text(text, language)
             
             # Perform classification
@@ -100,15 +106,133 @@ class TextClassifierService:
                 "processing_time": processing_time
             }
     
-    async def _preprocess_text(self, text: str, language: str) -> str:
-        """Preprocess text before classification"""
-        # Simple preprocessing
-        text = text.strip()
+    async def _preprocess_text(self, text: str, language: str = None) -> str:
+        """
+        Advanced text preprocessing for real-world applications
         
-        # For demo, we'll assume English or use simple translation
-        if language != "en":
-            # In a real implementation, you would use Google Gemini API here
-            logger.info(f"Text is in {language}, would translate to English in production")
+        Args:
+            text: Input text to preprocess
+            language: Target language code (if None, will auto-detect)
+            
+        Returns:
+            Preprocessed text ready for classification
+        """
+        if not text or not text.strip():
+            return ""
+        
+        try:
+            # Step 1: Basic cleaning
+            processed_text = self._clean_text(text)
+            
+            # Step 2: Detect language if not provided
+            if language is None:
+                language = self._detect_language(processed_text)
+                logger.info(f"Auto-detected language: {language}")
+            
+            # Step 3: Final normalization
+            processed_text = self._normalize_text(processed_text)
+            
+            # Note: Translation will be handled separately by Gemini API
+            if language != "en" and language != "unknown":
+                logger.info(f"Text is in {language}, translation will be handled by Gemini API")
+            
+            return processed_text
+            
+        except Exception as e:
+            logger.error(f"Text preprocessing error: {e}")
+            # Return cleaned text even if other steps fail
+            return self._clean_text(text)
+    
+    def _clean_text(self, text: str) -> str:
+        """Clean and normalize text"""
+        # Remove excessive whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Remove URLs
+        text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+        
+        # Remove email addresses
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '', text)
+        
+        # Handle social media mentions and hashtags (keep the word part)
+        text = re.sub(r'@(\w+)', r'\1', text)
+        text = re.sub(r'#(\w+)', r'\1', text)
+        
+        # Remove phone numbers
+        text = re.sub(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b', '', text)
+        
+        # Remove excessive punctuation (keep normal punctuation)
+        text = re.sub(r'[!]{2,}', '!', text)
+        text = re.sub(r'[?]{2,}', '?', text)
+        text = re.sub(r'[.]{3,}', '...', text)
+        
+        # Remove non-printable characters but keep emojis
+        text = ''.join(char for char in text if unicodedata.category(char)[0] != 'C' or ord(char) > 127)
+        
+        # Remove extra spaces and trim
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+    
+    def _detect_language(self, text: str) -> str:
+        """Detect text language using langdetect"""
+        try:
+            # Only attempt detection if text is long enough
+            if len(text.strip()) < 10:
+                return "unknown"
+            
+            # Remove numbers and special characters for better detection
+            clean_text = re.sub(r'[^\w\s]', ' ', text)
+            clean_text = re.sub(r'\d+', '', clean_text)
+            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+            
+            if len(clean_text) < 5:
+                return "unknown"
+            
+            detected_lang = detect(clean_text)
+            
+            # Map some common language codes
+            lang_mapping = {
+                'vi': 'vi',  # Vietnamese
+                'en': 'en',  # English
+                'zh-cn': 'zh',  # Chinese
+                'ja': 'ja',  # Japanese
+                'ko': 'ko',  # Korean
+                'th': 'th',  # Thai
+                'fr': 'fr',  # French
+                'de': 'de',  # German
+                'es': 'es',  # Spanish
+                'it': 'it',  # Italian
+                'ru': 'ru',  # Russian
+                'ar': 'ar',  # Arabic
+            }
+            
+            return lang_mapping.get(detected_lang, detected_lang)
+            
+        except Exception as e:
+            logger.warning(f"Language detection failed: {e}")
+            return "unknown"
+    
+    def _normalize_text(self, text: str) -> str:
+        """Final text normalization"""
+        # Convert to lowercase for consistency (optional, depends on model requirements)
+        text = text.lower()
+        
+        # Normalize unicode characters
+        text = unicodedata.normalize('NFKD', text)
+        
+        # Remove excessive whitespace again
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Ensure text is not empty
+        if not text:
+            return "empty text"
+        
+        # Limit text length (most models have token limits)
+        max_length = 512  # Adjust based on your model's requirements
+        if len(text) > max_length:
+            text = text[:max_length].rsplit(' ', 1)[0]  # Cut at word boundary
+            logger.info(f"Text truncated to {len(text)} characters")
         
         return text
     

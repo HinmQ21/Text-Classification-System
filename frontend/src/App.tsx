@@ -565,87 +565,74 @@ const App: React.FC = () => {
           <div className="card">
             <h3>🎯 Try These Examples:</h3>
             <div className="examples">
-              <div className="example-group">
-                <h4>Sentiment Analysis 😊:</h4>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("I absolutely love this product! It's amazing and works perfectly!")}
-                >
-                  Positive Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("This is terrible. I hate it and want my money back.")}
-                >
-                  Negative Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("I went to the store to buy some groceries.")}
-                >
-                  Neutral Example
-                </button>
-              </div>
+              {modelType === 'sentiment' && (
+                <div className="example-group">
+                  <h4>Sentiment Analysis 😊:</h4>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("I absolutely love this product! It's amazing and works perfectly!")}
+                  >
+                    Positive Example
+                  </button>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("This is terrible. I hate it and want my money back.")}
+                  >
+                    Negative Example
+                  </button>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("I went to the store to buy some groceries.")}
+                  >
+                    Neutral Example
+                  </button>
+                </div>
+              )}
               
-              <div className="example-group">
-                <h4>Spam Detection 🚫:</h4>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("FREE MONEY! Click now to win $1000! Limited time offer!")}
-                >
-                  Spam Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("Hi, I wanted to follow up on our meeting yesterday about the project timeline.")}
-                >
-                  Not Spam Example
-                </button>
-              </div>
+              {modelType === 'spam' && (
+                <div className="example-group">
+                  <h4>Spam Detection 🚫:</h4>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("FREE MONEY! Click now to win $1000! Limited time offer!")}
+                  >
+                    Spam Example
+                  </button>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("Hi, I wanted to follow up on our meeting yesterday about the project timeline.")}
+                  >
+                    Not Spam Example
+                  </button>
+                </div>
+              )}
 
-              <div className="example-group">
-                <h4>Topic Classification 🏷️:</h4>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("The new AI programming language makes machine learning development much faster and easier for developers.")}
-                >
-                  Technology Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("The basketball team won the championship after an incredible final game with a score of 95-88.")}
-                >
-                  Sports Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("The company's quarterly earnings exceeded expectations, driving stock prices up by 15% in early trading.")}
-                >
-                  Business Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("New research shows that regular exercise and a balanced diet can significantly reduce the risk of heart disease.")}
-                >
-                  Health Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("The university announced new scholarship programs for students pursuing computer science and engineering degrees.")}
-                >
-                  Education Example
-                </button>
-                <button 
-                  className="example-btn"
-                  onClick={() => setText("The latest blockbuster movie starring famous actors broke box office records on its opening weekend.")}
-                >
-                  Entertainment Example
-                </button>
-              </div>
+              {modelType === 'topic' && (
+                <div className="example-group">
+                  <h4>Topic Classification 🏷️:</h4>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("The new AI programming language makes machine learning development much faster and easier for developers.")}
+                  >
+                    Technology Example
+                  </button>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("The basketball team won the championship after an incredible final game with a score of 95-88.")}
+                  >
+                    Sports Example
+                  </button>
+                  <button 
+                    className="example-btn"
+                    onClick={() => setText("The company's quarterly earnings exceeded expectations, driving stock prices up by 15% in early trading.")}
+                  >
+                    Business Example
+                  </button>
+                </div>  
+              )}
             </div>
           </div>
         )}
-
         <footer className="footer">
           <p>🚀 Text Classification System Demo - Built with React & FastAPI</p>
         </footer>
