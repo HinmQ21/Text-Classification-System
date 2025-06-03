@@ -69,6 +69,7 @@ Hệ thống phân loại văn bản đa ngôn ngữ với khả năng xử lý 
 - Python 3.8+
 - Node.js 16+
 - Redis Server
+- Docker & Docker Compose (cho deployment)
 - Git
 
 ### 1. Clone repository
@@ -78,7 +79,57 @@ git clone <repository-url>
 cd text-classification-sys
 ```
 
-### 2. Cài đặt Backend
+### 2. Thiết lập Environment Variables
+
+```bash
+# Copy file cấu hình mẫu
+cp env.example .env
+
+# Chỉnh sửa file .env với các thông tin cần thiết
+# Đặc biệt cần cập nhật:
+# - GEMINI_API_KEY=your_actual_api_key
+# - SECRET_KEY=your_secure_secret_key
+```
+
+### 3. Chạy với Docker (Khuyến nghị)
+
+#### Development Mode
+
+```bash
+# Khởi động tất cả services
+docker-compose up --build
+
+# Chạy ở background
+docker-compose up -d --build
+
+# Xem logs
+docker-compose logs -f
+
+# Dừng services
+docker-compose down
+```
+
+#### Production Mode
+
+```bash
+# Tạo file .env cho production với các giá trị thực tế
+cp env.example .env
+
+# Chỉnh sửa .env với các giá trị production:
+# DEBUG=False
+# SECRET_KEY=your-super-secure-secret-key
+# GEMINI_API_KEY=your-actual-gemini-api-key
+
+# Deploy production
+docker-compose -f docker-compose.prod.yml up -d --build
+
+# Scaling workers cho production
+docker-compose -f docker-compose.prod.yml up -d --scale worker=3
+```
+
+### 4. Manual Setup (Development)
+
+#### Backend Setup
 
 ```bash
 cd backend
@@ -90,38 +141,20 @@ venv\Scripts\activate  # Windows
 
 # Cài đặt dependencies
 pip install -r requirements.txt
+
+# Thiết lập .env file
+cp ../env.example .env
+# Chỉnh sửa .env với các giá trị cần thiết
 ```
 
-### 3. Cài đặt Frontend
+#### Frontend Setup
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 4. Thiết lập môi trường
-
-Tạo file `.env` trong thư mục `backend/`:
-
-```env
-# API Keys
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Database
-DATABASE_URL=sqlite:///./text_classification.db
-
-# JWT
-SECRET_KEY=your_secret_key_here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# Redis
-REDIS_URL=redis://localhost:6379/0
-```
-
-### 5. Chạy hệ thống
-
-#### Phương pháp 1: Manual startup
+#### Manual Startup
 
 ```bash
 # 1. Khởi động Redis server
@@ -129,7 +162,8 @@ redis-server
 
 # 2. Khởi động backend (từ thư mục backend/)
 cd backend
-python run_system.bat  # Hoặc chạy lệnh riêng lẻ:
+python run_system.bat  # Windows
+# Hoặc chạy lệnh riêng lẻ:
 # python start_workers.py --mode monitor
 # python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
@@ -138,18 +172,18 @@ cd frontend
 npm start
 ```
 
-#### Phương pháp 2: Docker Compose
+### 5. Truy cập ứng dụng
 
-```bash
-docker-compose up --build
-```
-
-### 6. Truy cập ứng dụng
-
+#### Development Mode
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
-- **RQ Dashboard**: http://localhost:9181 (khi chạy manual)
+- **RQ Dashboard**: http://localhost:9181
+
+#### Production Mode
+- **Frontend**: http://localhost (port 80)
+- **Backend API**: http://localhost:8000
+- **RQ Dashboard**: http://localhost:9181
 
 ## 📖 Sử dụng
 
@@ -217,31 +251,38 @@ POST /auth/login
 
 ## 🔧 Cấu hình
 
-### Model Configuration
+### Environment Variables
 
-File `backend/models/` chứa cấu hình cho các models:
+Các biến môi trường quan trọng trong file `.env`:
 
-- **Sentiment**: Phân tích cảm xúc
-- **Spam**: Phát hiện spam  
-- **Topic**: Phân loại chủ đề
+```env
+# API Keys
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Security
+SECRET_KEY=your-super-secret-jwt-key
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Database
+DATABASE_URL=sqlite:///./data/text_classification.db
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+```
+
+### Docker Services
+
+- **redis**: Message queue và cache
+- **backend**: FastAPI application server
+- **worker**: RQ background workers (có thể scale)
+- **rq-dashboard**: Monitoring dashboard cho queues
+- **frontend**: React application với Nginx
 
 ### Queue Configuration
 
-File `backend/config/redis_config.py`:
-
 ```python
-REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = "redis://redis:6379/0"  # Docker
 QUEUE_NAMES = ["default", "classification", "csv_processing"]
-```
-
-### Worker Configuration
-
-```bash
-# Chạy workers với monitoring
-python start_workers.py --mode monitor
-
-# Chạy workers cụ thể
-python start_workers.py --queues classification,csv_processing
 ```
 
 ## 📁 Cấu trúc thư mục
@@ -263,8 +304,11 @@ text-classification-sys/
 │   ├── src/                 # React source code
 │   ├── public/              # Static files
 │   ├── package.json         # Node dependencies
+│   ├── nginx.conf           # Nginx configuration
 │   └── Dockerfile           # Frontend container
-├── docker-compose.yml       # Multi-container setup
+├── docker-compose.yml       # Development setup
+├── docker-compose.prod.yml  # Production setup
+├── env.example              # Environment variables template
 ├── .gitignore
 └── README.md
 ```
@@ -289,26 +333,64 @@ npm test
 
 Sử dụng Swagger UI tại `http://localhost:8000/docs` để test các endpoints.
 
-## 🚀 Deployment
-
-### Production với Docker
+### Docker Testing
 
 ```bash
-# Build và deploy
-docker-compose -f docker-compose.prod.yml up --build -d
+# Test health checks
+docker-compose ps
+docker-compose logs backend
+docker-compose logs worker
 
-# Scaling workers
-docker-compose up --scale worker=3
+# Test specific service
+docker-compose exec backend curl http://localhost:8000/health
 ```
 
-### Environment Variables cho Production
+## 🚀 Deployment
 
-```env
-# Production settings
-DEBUG=False
-ALLOWED_HOSTS=your-domain.com
-DATABASE_URL=postgresql://user:pass@db:5432/textclassification
-REDIS_URL=redis://redis:6379/0
+### Development Deployment
+
+```bash
+# Build và khởi động
+docker-compose up --build
+
+# Chạy ở background
+docker-compose up -d --build
+
+# Theo dõi logs
+docker-compose logs -f
+```
+
+### Production Deployment
+
+```bash
+# Thiết lập environment variables cho production
+cp env.example .env
+# Chỉnh sửa .env với các giá trị production
+
+# Deploy production stack
+docker-compose -f docker-compose.prod.yml up -d --build
+
+# Scale workers
+docker-compose -f docker-compose.prod.yml up -d --scale worker=3
+
+# Monitoring
+docker-compose -f docker-compose.prod.yml logs -f
+```
+
+### Maintenance Commands
+
+```bash
+# Restart specific service
+docker-compose restart backend
+
+# Update and rebuild
+docker-compose down
+docker-compose pull
+docker-compose up --build -d
+
+# Clean up
+docker-compose down --volumes --remove-orphans
+docker system prune -a
 ```
 
 ## 🔍 Monitoring
@@ -332,6 +414,24 @@ GET /queue/info
 
 # Specific job status
 GET /queue/status/{job_id}
+
+# Docker container health
+docker-compose ps
+```
+
+### Logs
+
+```bash
+# Xem logs tất cả services
+docker-compose logs -f
+
+# Xem logs specific service
+docker-compose logs -f backend
+docker-compose logs -f worker
+docker-compose logs -f frontend
+
+# Xem logs với timestamps
+docker-compose logs -f -t
 ```
 
 ## 🛠️ Troubleshooting
@@ -340,36 +440,73 @@ GET /queue/status/{job_id}
 
 1. **Redis connection failed**
    ```bash
-   # Khởi động Redis
-   redis-server
+   # Kiểm tra Redis service
+   docker-compose ps redis
+   docker-compose logs redis
+   
+   # Restart Redis
+   docker-compose restart redis
    ```
 
-2. **Model loading error**
+2. **Backend không khởi động**
    ```bash
-   # Kiểm tra GEMINI_API_KEY trong .env
-   # Đảm bảo internet connection
+   # Kiểm tra logs
+   docker-compose logs backend
+   
+   # Kiểm tra environment variables
+   docker-compose exec backend env | grep -E "(REDIS|DATABASE|GEMINI)"
    ```
 
-3. **Frontend proxy error**
+3. **Worker không xử lý jobs**
    ```bash
-   # Đảm bảo backend đang chạy trên port 8000
-   # Kiểm tra CORS settings
-   ```
-
-4. **Worker not processing jobs**
-   ```bash
+   # Kiểm tra worker status
+   docker-compose logs worker
+   
    # Restart workers
-   python start_workers.py --mode restart
+   docker-compose restart worker
+   
+   # Scale workers
+   docker-compose up -d --scale worker=2
    ```
 
-### Debug Mode
+4. **Frontend không kết nối được backend**
+   ```bash
+   # Kiểm tra nginx config
+   docker-compose exec frontend cat /etc/nginx/conf.d/default.conf
+   
+   # Kiểm tra network connectivity
+   docker-compose exec frontend curl http://backend:8000/health
+   ```
+
+### Debug Commands
 
 ```bash
-# Backend với debug logs
-DEBUG=True python -m uvicorn main:app --reload --log-level debug
+# Access container shell
+docker-compose exec backend bash
+docker-compose exec frontend sh
 
-# Frontend với debug
-REACT_APP_DEBUG=true npm start
+# Check environment variables
+docker-compose exec backend env
+
+# Check network connectivity
+docker-compose exec backend ping redis
+docker-compose exec frontend ping backend
+
+# Monitor resource usage
+docker stats
+```
+
+### Performance Tuning
+
+```bash
+# Scale workers theo nhu cầu
+docker-compose up -d --scale worker=3
+
+# Monitor resource usage
+docker stats
+
+# Optimize Redis memory
+docker-compose exec redis redis-cli CONFIG GET maxmemory
 ```
 
 ## 📄 License
