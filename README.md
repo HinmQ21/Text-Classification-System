@@ -10,7 +10,7 @@ Hệ thống phân loại văn bản đa ngôn ngữ với khả năng xử lý 
 - **Backend**: FastAPI (Python) 
 - **Machine Learning**: Transformer models với Hugging Face
 - **Queue System**: Redis + RQ cho xử lý bất đồng bộ
-- **Database**: SQLite với SQLAlchemy ORM
+- **Database**: MySQL với connection pooling và optimization
 - **Deployment**: Docker & Docker Compose
 
 ## ✨ Tính năng chính
@@ -52,7 +52,7 @@ Hệ thống phân loại văn bản đa ngôn ngữ với khả năng xử lý 
                                 ▼                       ▼
                        ┌─────────────────┐    ┌─────────────────┐
                        │   Database      │    │   Redis         │
-                       │   SQLite        │    │   Cache/Queue   │
+                       │   MySQL         │    │   Cache/Queue   │
                        └─────────────────┘    └─────────────────┘
                                 │
                                 ▼
@@ -66,10 +66,11 @@ Hệ thống phân loại văn bản đa ngôn ngữ với khả năng xử lý 
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.9+
 - Node.js 16+
 - Redis Server
 - Docker & Docker Compose (cho deployment)
+- MySQL Server
 - Git
 
 ### 1. Clone repository
@@ -264,7 +265,7 @@ SECRET_KEY=your-super-secret-jwt-key
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # Database
-DATABASE_URL=sqlite:///./data/text_classification.db
+DATABASE_URL=mysql+pymysql://app_user:your_password@localhost/text_classification
 
 # Redis
 REDIS_URL=redis://localhost:6379/0
@@ -295,11 +296,14 @@ text-classification-sys/
 │   ├── services/            # Business logic services
 │   ├── tasks/               # Background tasks
 │   ├── data/                # Database & uploaded files
+│   ├── logs/                # Log files
 │   ├── main.py              # FastAPI application
 │   ├── worker.py            # RQ worker
 │   ├── start_workers.py     # Worker management
 │   ├── requirements.txt     # Python dependencies
-│   └── Dockerfile           # Backend container
+│   ├── Dockerfile           # Backend container
+│   ├── docker-compose.yml   # Development setup
+│   └── migrate_to_mysql.py  # Migration script
 ├── frontend/
 │   ├── src/                 # React source code
 │   ├── public/              # Static files

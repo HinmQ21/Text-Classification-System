@@ -1,27 +1,11 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
+from sqlalchemy.orm import Session, relationship
 from datetime import datetime
-import os
 import uuid
 
-# Database configuration
-# Create data directory if it doesn't exist
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# Set database path to data directory
-DB_PATH = os.path.join(DATA_DIR, "text_classification.db")
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
-
-# Create engine
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
-
-# Create session
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Import database configuration
+from config.database_config import engine, SessionLocal
 
 # Base class for models
 Base = declarative_base()

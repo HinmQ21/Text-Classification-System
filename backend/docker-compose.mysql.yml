@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: text_classification_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: text_classification
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: app_password
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    command: [
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_unicode_ci',
+      '--innodb-buffer-pool-size=256M',
+      '--max-connections=200',
+      '--innodb-flush-log-at-trx-commit=2',
+      '--query-cache-type=1',
+      '--query-cache-size=32M'
+    ]
+    networks:
+      - text_classification_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: text_classification_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - text_classification_network
+
+  adminer:
+    image: adminer:latest
+    container_name: text_classification_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    networks:
+      - text_classification_network
+    depends_on:
+      - mysql
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  text_classification_network:
+    driver: bridge 

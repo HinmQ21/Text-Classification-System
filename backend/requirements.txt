@@ -18,3 +18,7 @@ passlib[bcrypt]==1.7.4
 redis==5.0.1
 rq==1.15.1
 rq-dashboard==0.7.0
+
+# Database MySQL support
+PyMySQL==1.1.0
+cryptography==41.0.7
