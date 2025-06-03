@@ -9,14 +9,16 @@ class TextClassificationRequest(BaseModel):
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
     temperature: float = Field(default=1.0, ge=0.5, le=2.0, description="Temperature for softmax scaling (0.5-2.0)")
     model_selection: Union[str, List[str]] = Field(default="all", description="Which models to use: 'all', single model key, or list of model keys")
+    enable_translation: bool = Field(default=True, description="Whether to enable translation to English for non-English text")
     
     class Config:
         json_json_schema_extra = {
             "example": {
-                "text": "I love this product! It's amazing!",
+                "text": "Tôi rất thích sản phẩm này!",
                 "model_type": "sentiment",
                 "temperature": 1.0,
-                "model_selection": "all"
+                "model_selection": "all",
+                "enable_translation": True
             }
         }
 
@@ -63,6 +65,7 @@ class BatchRequest(BaseModel):
     model_type: Literal["sentiment", "spam", "topic"] = Field(..., description="Type of classification model")
     temperature: float = Field(default=1.0, ge=0.5, le=2.0, description="Temperature for softmax scaling (0.5-2.0)")
     model_selection: Union[str, List[str]] = Field(default="all", description="Which models to use: 'all', single model key, or list of model keys")
+    enable_translation: bool = Field(default=True, description="Whether to enable translation to English for non-English text")
     
     class Config:
         json_schema_extra = {
@@ -74,7 +77,8 @@ class BatchRequest(BaseModel):
                 ],
                 "model_type": "sentiment",
                 "temperature": 1.0,
-                "model_selection": "all"
+                "model_selection": "all",
+                "enable_translation": True
             }
         }
 
@@ -108,6 +112,7 @@ class CSVUploadRequest(BaseModel):
     batch_size: int = Field(default=16, description="Number of texts to process in each batch")
     text_column: str = Field(default="text", description="Name of the column containing text to classify")
     model_selection: Union[str, List[str]] = Field(default="all", description="Which models to use: 'all', single model key, or list of model keys")
+    enable_translation: bool = Field(default=True, description="Whether to enable translation to English for non-English text")
 
     @validator('batch_size')
     def validate_batch_size(cls, v):
@@ -122,7 +127,8 @@ class CSVUploadRequest(BaseModel):
                 "model_type": "sentiment",
                 "batch_size": 16,
                 "text_column": "text",
-                "model_selection": "all"
+                "model_selection": "all",
+                "enable_translation": True
             }
         }
 

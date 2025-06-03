@@ -168,7 +168,8 @@ class CSVProcessorService:
                         model_type=request.model_type,
                         batch_size=batch_size,
                         language=None,  # Let it auto-detect for each text
-                        model_selection=getattr(request, 'model_selection', 'all')
+                        model_selection=getattr(request, 'model_selection', 'all'),
+                        enable_translation=getattr(request, 'enable_translation', True)
                     )
                     batch_processing_time = time.time() - start_time
 

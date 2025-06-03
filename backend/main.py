@@ -26,6 +26,8 @@ from services.language_detector import LanguageDetectorService
 from services.csv_processor import CSVProcessorService
 from services.auth_service import auth_service
 from services.auth_dependencies import get_current_user_optional, get_current_user_required
+from services.queue_service import queue_service
+from tasks.worker_tasks import classify_text_task, batch_classify_task, csv_processing_task, health_check_task
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(
     title="Text Classification API",
-    description="A demo API for text classification with multi-language support",
+    description="A demo API for text classification with multi-language support and Redis queue processing",
     version="1.0.0"
 )
 
@@ -72,16 +74,35 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
-    return {
-        "status": "healthy",
-        "services": {
-            "text_classifier": text_classifier.is_ready(),
-            "language_detector": True,
-            "database": True
-        },
-        "timestamp": datetime.now().isoformat()
-    }
+    try:
+        # Check Redis connection
+        redis_healthy = True
+        try:
+            from config.redis_config import redis_conn
+            redis_conn.ping()
+        except Exception:
+            redis_healthy = False
+        
+        return {
+            "status": "healthy",
+            "services": {
+                "text_classifier": text_classifier.is_ready(),
+                "language_detector": True,
+                "database": True,
+                "redis": redis_healthy,
+                "queue_service": True
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
+# Original synchronous endpoint (kept for backward compatibility)
 @app.post("/classify", response_model=TextClassificationResponse)
 async def classify_text(
     request: TextClassificationRequest,
@@ -89,7 +110,7 @@ async def classify_text(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Classify a single text input
+    Classify a single text input (synchronous)
     Supports: sentiment, spam, topic classification
     Works for both authenticated and anonymous users
     """
@@ -103,7 +124,8 @@ async def classify_text(
             model_type=request.model_type,
             language=detected_language,
             temperature=request.temperature,
-            model_selection=request.model_selection
+            model_selection=request.model_selection,
+            enable_translation=request.enable_translation
         )
 
         # Save result to database if user is authenticated
@@ -139,13 +161,46 @@ async def classify_text(
         logger.error(f"Classification error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
 
+# New asynchronous endpoint using queue
+@app.post("/classify/async")
+async def classify_text_async(
+    request: TextClassificationRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    Classify a single text input asynchronously using Redis queue
+    Returns job_id to track processing status
+    """
+    try:
+        # Enqueue the classification task
+        job_id = queue_service.enqueue_classification(
+            classify_text_task,
+            text=request.text,
+            model_type=request.model_type,
+            temperature=request.temperature,
+            model_selection=request.model_selection,
+            user_id=current_user.id if current_user else None,
+            enable_translation=request.enable_translation
+        )
+        
+        return {
+            "job_id": job_id,
+            "message": "Classification task queued successfully",
+            "status": "queued",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to queue classification task: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue classification: {str(e)}")
+
 @app.post("/classify/batch")
 async def classify_batch(
     request: BatchRequest,
     db = Depends(get_db)
 ):
     """
-    Classify multiple texts in batch
+    Classify multiple texts in batch (synchronous - kept for backward compatibility)
     """
     try:
         results = []
@@ -160,7 +215,8 @@ async def classify_batch(
                 model_type=request.model_type,
                 language=detected_language,
                 temperature=request.temperature,
-                model_selection=request.model_selection
+                model_selection=request.model_selection,
+                enable_translation=request.enable_translation
             )
             
             results.append({
@@ -182,6 +238,36 @@ async def classify_batch(
     except Exception as e:
         logger.error(f"Batch classification error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Batch classification failed: {str(e)}")
+
+# New asynchronous batch endpoint
+@app.post("/classify/batch/async")
+async def classify_batch_async(request: BatchRequest):
+    """
+    Classify multiple texts in batch asynchronously using Redis queue
+    Returns job_id to track processing status
+    """
+    try:
+        # Enqueue the batch classification task
+        job_id = queue_service.enqueue_batch_processing(
+            batch_classify_task,
+            texts=request.texts,
+            model_type=request.model_type,
+            temperature=request.temperature,
+            model_selection=request.model_selection,
+            enable_translation=request.enable_translation
+        )
+        
+        return {
+            "job_id": job_id,
+            "message": "Batch classification task queued successfully",
+            "status": "queued",
+            "total_texts": len(request.texts),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to queue batch classification task: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue batch classification: {str(e)}")
 
 @app.get("/models")
 async def get_available_models():
@@ -226,10 +312,11 @@ async def upload_csv_for_classification(
     batch_size: int = Form(default=10),
     text_column: str = Form(default="text"),
     model_selection: str = Form(default="all"),
+    enable_translation: bool = Form(default=True),
     db = Depends(get_db)
 ):
     """
-    Upload CSV file for batch text classification
+    Upload CSV file for batch text classification (synchronous - kept for backward compatibility)
     """
     try:
         # Validate file type
@@ -250,7 +337,8 @@ async def upload_csv_for_classification(
             model_type=model_type,
             batch_size=batch_size,
             text_column=text_column,
-            model_selection=parsed_model_selection
+            model_selection=parsed_model_selection,
+            enable_translation=enable_translation
         )
 
         # Start processing
@@ -267,6 +355,64 @@ async def upload_csv_for_classification(
     except Exception as e:
         logger.error(f"CSV upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"CSV processing failed: {str(e)}")
+
+# New asynchronous CSV endpoint
+@app.post("/classify/csv/async")
+async def upload_csv_for_classification_async(
+    file: UploadFile = File(...),
+    model_type: str = Form(...),
+    batch_size: int = Form(default=10),
+    text_column: str = Form(default="text"),
+    model_selection: str = Form(default="all"),
+    enable_translation: bool = Form(default=True)
+):
+    """
+    Upload CSV file for batch text classification asynchronously using Redis queue
+    Returns job_id to track processing status
+    """
+    try:
+        # Validate file type
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+
+        # Read file content
+        file_content = await file.read()
+        file_content_str = file_content.decode('utf-8')
+        
+        # Parse model_selection (can be comma-separated string)
+        parsed_model_selection = model_selection
+        if model_selection != "all" and "," in model_selection:
+            parsed_model_selection = model_selection.split(",")
+        
+        # Create request object as dict for serialization
+        csv_request_dict = {
+            "model_type": model_type,
+            "batch_size": batch_size,
+            "text_column": text_column,
+            "model_selection": parsed_model_selection,
+            "enable_translation": enable_translation
+        }
+
+        # Enqueue the CSV processing task
+        job_id = queue_service.enqueue_csv_processing(
+            csv_processing_task,
+            file_content=file_content_str,
+            csv_request_dict=csv_request_dict
+        )
+
+        return {
+            "job_id": job_id,
+            "message": "CSV processing task queued successfully",
+            "status": "queued",
+            "filename": file.filename,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to queue CSV processing task: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue CSV processing: {str(e)}")
 
 @app.get("/classify/csv/status/{job_id}", response_model=BatchProcessingStatus)
 async def get_csv_processing_status(
@@ -305,6 +451,83 @@ async def get_csv_processing_results(
     except Exception as e:
         logger.error(f"Error getting job results: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get job results: {str(e)}")
+
+# New queue management endpoints
+@app.get("/queue/status/{job_id}")
+async def get_job_status(job_id: str):
+    """Get status of any job by ID"""
+    try:
+        status = queue_service.get_job_status(job_id)
+        return status
+    except Exception as e:
+        logger.error(f"Error getting job status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get job status: {str(e)}")
+
+@app.get("/queue/result/{job_id}")
+async def get_job_result(job_id: str):
+    """Get result of a completed job"""
+    try:
+        result = queue_service.get_job_result(job_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Job not found or not completed")
+        return {"job_id": job_id, "result": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting job result: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get job result: {str(e)}")
+
+@app.delete("/queue/cancel/{job_id}")
+async def cancel_job(job_id: str):
+    """Cancel a pending or running job"""
+    try:
+        success = queue_service.cancel_job(job_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Job not found or cannot be cancelled")
+        return {"message": f"Job {job_id} cancelled successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling job: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel job: {str(e)}")
+
+@app.get("/queue/info")
+async def get_queue_info():
+    """Get information about all queues"""
+    try:
+        queue_info = queue_service.get_queue_info()
+        return {"queues": queue_info, "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        logger.error(f"Error getting queue info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get queue info: {str(e)}")
+
+@app.post("/queue/cleanup")
+async def cleanup_old_jobs(days: int = Query(7, ge=1, le=30, description="Days to keep jobs")):
+    """Clean up old completed jobs"""
+    try:
+        cleaned_counts = queue_service.clean_old_jobs(days)
+        return {
+            "message": f"Cleaned up jobs older than {days} days",
+            "cleaned_counts": cleaned_counts,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning up jobs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup jobs: {str(e)}")
+
+@app.post("/queue/health-check")
+async def queue_health_check():
+    """Test queue system by running a simple health check task"""
+    try:
+        job_id = queue_service.enqueue_classification(health_check_task)
+        return {
+            "job_id": job_id,
+            "message": "Health check task queued successfully",
+            "status": "queued"
+        }
+    except Exception as e:
+        logger.error(f"Failed to queue health check task: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue health check: {str(e)}")
 
 # Authentication endpoints
 @app.post("/auth/register", response_model=Token)

@@ -134,6 +134,9 @@ const AppContent: React.FC = () => {
   const [csvResults, setCsvResults] = useState<CSVBatchResponse | null>(null);
   const [csvLoading, setCsvLoading] = useState(false);
 
+  // Translation toggle state
+  const [enableTranslation, setEnableTranslation] = useState(false);
+
   // Available batch sizes
   const availableBatchSizes = [1, 4, 8, 16, 64, 128, 256];
 
@@ -234,7 +237,8 @@ const AppContent: React.FC = () => {
         text: text.trim(),
         model_type: modelType,
         temperature: temperature,
-        model_selection: getModelSelectionForRequest(modelType)
+        model_selection: getModelSelectionForRequest(modelType),
+        enable_translation: enableTranslation
       });
 
       setResult(response.data);
@@ -262,6 +266,7 @@ const AppContent: React.FC = () => {
       formData.append('model_type', modelType);
       formData.append('batch_size', batchSize.toString());
       formData.append('text_column', textColumn);
+      formData.append('enable_translation', enableTranslation.toString());
       
       const modelSelection = getModelSelectionForRequest(modelType);
       if (typeof modelSelection === 'string') {
@@ -711,61 +716,102 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        {/* Temperature Control */}
+        {/* Temperature Control and Translation Toggle - Side by Side */}
         <div className="card">
-          <div className="temperature-control">
-            <div className="input-group">
-              <label htmlFor="temperature-slider">
-                🌡️ Temperature Control
-              </label>
-              <div className="temperature-info">
-                <small>Controls prediction confidence: Lower = more confident, Higher = less confident</small>
-              </div>
-              
-              <div className="temperature-input-section">
-                <div className="temperature-value-input">
-                  <label htmlFor="temperature-input">Value:</label>
+          <div className="controls-container">
+            {/* Temperature Control */}
+            <div className="temperature-control">
+              <div className="input-group">
+                <label htmlFor="temperature-slider">
+                  🌡️ Temperature Control
+                </label>
+                <div className="temperature-info">
+                  <small>Controls prediction confidence: Lower = more confident, Higher = less confident</small>
+                </div>
+                
+                <div className="temperature-input-section">
+                  <div className="temperature-value-input">
+                    <label htmlFor="temperature-input">Value:</label>
+                    <input
+                      type="number"
+                      id="temperature-input"
+                      min="0.5"
+                      max="2.0"
+                      step="0.01"
+                      value={temperatureInput}
+                      onChange={handleTemperatureInputChange}
+                      onBlur={handleTemperatureInputBlur}
+                      onKeyPress={handleTemperatureInputKeyPress}
+                      className="temperature-number-input"
+                      placeholder="0.50 - 2.00"
+                    />
+                  </div>
+                  <div className="temperature-range">
+                    <span className="range-label">Range: 0.50 - 2.00</span>
+                  </div>
+                </div>
+
+                <div className="slider-container">
+                  <span className="slider-label">0.5</span>
                   <input
-                    type="number"
-                    id="temperature-input"
+                    type="range"
+                    id="temperature-slider"
                     min="0.5"
                     max="2.0"
-                    step="0.01"
-                    value={temperatureInput}
-                    onChange={handleTemperatureInputChange}
-                    onBlur={handleTemperatureInputBlur}
-                    onKeyPress={handleTemperatureInputKeyPress}
-                    className="temperature-number-input"
-                    placeholder="0.50 - 2.00"
+                    step="0.05"
+                    value={temperature}
+                    onChange={handleTemperatureSliderChange}
+                    className="temperature-slider"
                   />
+                  <span className="slider-label">2.0</span>
                 </div>
-                <div className="temperature-range">
-                  <span className="range-label">Range: 0.50 - 2.00</span>
+                
+                <div className={`temperature-description ${
+                  temperature < 0.8 ? 'high-confidence' : 
+                  temperature <= 1.2 ? 'balanced' : 'exploratory'
+                }`}>
+                  {temperature < 0.8 && "🔥 High Confidence Mode"}
+                  {temperature >= 0.8 && temperature <= 1.2 && "⚖️ Balanced Mode"}
+                  {temperature > 1.2 && "🌈 Exploratory Mode"}
                 </div>
               </div>
+            </div>
 
-              <div className="slider-container">
-                <span className="slider-label">0.5</span>
-                <input
-                  type="range"
-                  id="temperature-slider"
-                  min="0.5"
-                  max="2.0"
-                  step="0.05"
-                  value={temperature}
-                  onChange={handleTemperatureSliderChange}
-                  className="temperature-slider"
-                />
-                <span className="slider-label">2.0</span>
-              </div>
-              
-              <div className={`temperature-description ${
-                temperature < 0.8 ? 'high-confidence' : 
-                temperature <= 1.2 ? 'balanced' : 'exploratory'
-              }`}>
-                {temperature < 0.8 && "🔥 High Confidence Mode"}
-                {temperature >= 0.8 && temperature <= 1.2 && "⚖️ Balanced Mode"}
-                {temperature > 1.2 && "🌈 Exploratory Mode"}
+            {/* Translation Toggle */}
+            <div className="translation-control">
+              <div className="input-group">
+                <label htmlFor="translation-toggle">
+                  🌐 Translation Settings
+                </label>
+                <div className="translation-info">
+                  <small>Enable automatic translation to English for non-English text</small>
+                </div>
+                
+                <div className="translation-toggle-section">
+                  <div className="toggle-container">
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        id="translation-toggle"
+                        checked={enableTranslation}
+                        onChange={(e) => setEnableTranslation(e.target.checked)}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                    <span className={`toggle-label ${enableTranslation ? 'enabled' : 'disabled'}`}>
+                      {enableTranslation ? '🟢 Translation Enabled' : '🔴 Translation Disabled'}
+                    </span>
+                  </div>
+                  
+                  <div className="translation-description">
+                    <small>
+                      {enableTranslation 
+                        ? "Non-English text will be automatically translated to English before classification"
+                        : "Text will be processed in its original language (may affect accuracy for non-English models)"
+                      }
+                    </small>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

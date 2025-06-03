@@ -244,37 +244,32 @@ class TextClassifierService:
             return self._ensemble_predictions(predictions, "average")
         
     async def classify(self, text: str, model_type: str, language: str = None, temperature: float = 1.0, 
-                      model_selection: Union[str, List[str]] = "all") -> Dict[str, Any]:
+                      model_selection: Union[str, List[str]] = "all", enable_translation: bool = True) -> Dict[str, Any]:
         """
-        Classify text using specified model(s)
+        Classify text with specified model type and parameters
         
         Args:
             text: Input text to classify
             model_type: Type of classification (sentiment, spam, topic)
-            language: Language of the text (if None, will auto-detect)
+            language: Language of input text (if None, will auto-detect)
             temperature: Temperature for softmax scaling (0.5-2.0)
-            model_selection: Which models to use ("all", single model key, or list of model keys)
+            model_selection: Which models to use - "all", single model key, or list of model keys
+            enable_translation: Whether to enable translation to English for non-English text
             
         Returns:
-            Dictionary with prediction, confidence, all scores, and processing time
+            Classification result with metadata
         """
         start_time = time.time()
         
         try:
-            if model_type not in self.models:
-                raise ValueError(f"Model type '{model_type}' not supported")
+            # Validate model type
+            if model_type not in self.models or not self.models[model_type]:
+                raise ValueError(f"Model type '{model_type}' not available or not initialized")
             
-            # Clamp temperature to valid range
-            temperature = max(0.5, min(2.0, temperature))
-            
-            # Advanced text preprocessing with language detection and translation
-            processed_text = await self._preprocess_text(text, language)
-            
-            # Determine which models to use
+            # Get available models for this type
             available_models = list(self.models[model_type].keys())
-            if not available_models:
-                raise ValueError(f"No models available for type '{model_type}'")
             
+            # Validate and process model selection
             if model_selection == "all":
                 selected_models = available_models
             elif isinstance(model_selection, str):
@@ -289,7 +284,13 @@ class TextClassifierService:
             else:
                 selected_models = available_models
             
-            # Perform classification with selected models
+            # Preprocess text
+            processed_text = await self._preprocess_text(text, language, enable_translation)
+            
+            if not processed_text or processed_text.strip() == "":
+                raise ValueError("Text preprocessing resulted in empty text")
+                
+            # Classify with selected models
             predictions = []
             model_results = {}
             
@@ -391,13 +392,14 @@ Input text:
             logger.error(f"Translation error: {e}")
             return text
     
-    async def _preprocess_text(self, text: str, language: str = None) -> str:
+    async def _preprocess_text(self, text: str, language: str = None, enable_translation: bool = True) -> str:
         """
         Advanced text preprocessing for real-world applications
         
         Args:
             text: Input text to preprocess
             language: Target language code (if None, will auto-detect)
+            enable_translation: Whether to enable translation to English
             
         Returns:
             Preprocessed text ready for classification
@@ -414,10 +416,12 @@ Input text:
                 language = self._detect_language(processed_text)
                 logger.info(f"Auto-detected language: {language}")
             
-            # Step 3: Translate to English if needed
-            if language != "en" and language != "unknown":
+            # Step 3: Translate to English if needed and enabled
+            if enable_translation and language != "en" and language != "unknown":
                 logger.info(f"Translating text from {language} to English...")
                 processed_text = await self._translate_to_english(processed_text, language)
+            elif not enable_translation and language != "en" and language != "unknown":
+                logger.info(f"Translation disabled. Processing text in original language: {language}")
             
             # Step 4: Final normalization
             processed_text = self._normalize_text(processed_text)
@@ -610,7 +614,7 @@ Input text:
     
     async def classify_batch(self, texts: List[str], model_type: str, batch_size: int,
                             language: str = None, temperature: float = 1.0,
-                            model_selection: Union[str, List[str]] = "all") -> List[Dict[str, Any]]:
+                            model_selection: Union[str, List[str]] = "all", enable_translation: bool = True) -> List[Dict[str, Any]]:
         """
         Classify multiple texts using batch processing with HuggingFace pipelines
 
@@ -621,6 +625,7 @@ Input text:
             language: Language of the texts (if None, will auto-detect for each text)
             temperature: Temperature for softmax scaling (0.5-2.0)
             model_selection: Which models to use ("all", single model key, or list of model keys)
+            enable_translation: Whether to enable translation to English for non-English texts
 
         Returns:
             List of dictionaries with prediction, confidence, all scores, and processing time for each text
@@ -639,7 +644,7 @@ Input text:
             detected_languages = []
 
             for text in texts:
-                processed_text = await self._preprocess_text(text, language)
+                processed_text = await self._preprocess_text(text, language, enable_translation)
                 processed_texts.append(processed_text)
 
                 # Detect language for each text if not provided
