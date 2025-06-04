@@ -2377,3 +2377,32 @@ input:checked + .toggle-slider:before {
     gap: 15px;
   }
 }
+
+/* Text validation styles */
+.text-validation-container {
+  margin-top: 8px;
+}
+
+.char-count {
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.char-count.warning {
+  color: #fd7e14;
+  font-weight: 600;
+}
+
+.validation-message {
+  margin-top: 8px;
+  margin-bottom: 0;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  border-radius: 4px;
+}
+
+.validation-message.error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}

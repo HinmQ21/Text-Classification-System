@@ -108,6 +108,14 @@ const AppContent: React.FC = () => {
   const [error, setError] = useState('');
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
 
+  // Text validation state
+  const [textValidation, setTextValidation] = useState({
+    isTooShort: false,
+    isTooLong: false,
+    minLength: 10,
+    maxLength: 10000
+  });
+
   // Authentication modal state
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -464,6 +472,26 @@ const AppContent: React.FC = () => {
     if (e.target === e.currentTarget) {
       closeChartModal();
     }
+  };
+
+  const validateTextLength = (inputText: string) => {
+    const trimmedText = inputText.trim();
+    const isTooShort = trimmedText.length > 0 && trimmedText.length < textValidation.minLength;
+    const isTooLong = inputText.length > textValidation.maxLength;
+    
+    setTextValidation(prev => ({
+      ...prev,
+      isTooShort,
+      isTooLong
+    }));
+
+    return { isTooShort, isTooLong };
+  };
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value;
+    setText(newText);
+    validateTextLength(newText);
   };
 
   // Enhanced chart options for modal view
@@ -825,20 +853,39 @@ const AppContent: React.FC = () => {
               <textarea
                 id="text-input"
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={handleTextChange}
                 placeholder="Type your text here... (e.g., 'I love this product!' or 'Free money! Click now!')"
                 rows={4}
                 maxLength={10000}
               />
-              <small>{text.length}/10000 characters</small>
+              <div className="text-validation-container">
+                <small className={textValidation.isTooLong ? 'char-count warning' : 'char-count'}>
+                  {text.length}/{textValidation.maxLength} characters
+                </small>
+                
+                {textValidation.isTooShort && (
+                  <div className="error validation-message">
+                    ⚠️ Text must be at least {textValidation.minLength} characters long
+                  </div>
+                )}
+                
+                {textValidation.isTooLong && (
+                  <div className="error validation-message">
+                    ⚠️ Text is too long! Maximum {textValidation.maxLength} characters allowed
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
               className="btn"
               onClick={handleClassify}
-              disabled={loading || !text.trim()}
+              disabled={loading || !text.trim() || textValidation.isTooShort || textValidation.isTooLong}
             >
-              {loading ? 'Analyzing...' : 'Classify Text'}
+              {loading ? 'Analyzing...' : 
+               textValidation.isTooShort ? 'Text too short' :
+               textValidation.isTooLong ? 'Text too long' :
+               'Classify Text'}
             </button>
 
             {error && (
