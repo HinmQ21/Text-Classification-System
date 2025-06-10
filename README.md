@@ -61,7 +61,7 @@ Hệ thống phân loại văn bản đa ngôn ngữ với khả năng xử lý 
                        │   Transformers  │
                        └─────────────────┘
 ```
-## System flow
+## Luồng hệ thống
 
 ![system flow](docs/flow.jpg)
 
